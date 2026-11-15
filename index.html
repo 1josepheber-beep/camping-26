@@ -192,6 +192,17 @@
   .savefab[data-mode="error"]{background:#8E2A22;color:#fff;box-shadow:0 6px 18px rgba(18,32,25,.3)}
   .savefab .spin{width:19px;height:19px;flex:none;border-radius:50%;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;animation:spin .8s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
+  .addnote{position:fixed;z-index:8;left:50%;transform:translateX(-50%);bottom:calc(76px + env(safe-area-inset-bottom));width:min(calc(100vw - 24px), 496px);background:var(--pine);color:#fff;border-radius:12px;padding:14px 14px 12px 16px;box-shadow:0 10px 28px rgba(18,32,25,.35);display:grid;gap:10px}
+  .addnote[hidden]{display:none}
+  .addnote p{margin:0;font-size:16px;line-height:1.4}
+  .addnote p b{font-weight:700}
+  .addnote .nbtns{display:flex;gap:10px;justify-content:flex-end}
+  .addnote button{border:0;border-radius:8px;padding:9px 16px;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:18px}
+  .addnote .nshow{background:var(--blaze);color:var(--pine)}
+  .addnote .nclose{background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.45)}
+  body.has-fab .addnote{bottom:calc(126px + env(safe-area-inset-bottom))}
+  li.row.flash{animation:flash 2.4s ease-out}
+  @keyframes flash{0%,35%{background:#FBE7A6}100%{background:transparent}}
   body.has-fab .app{padding-bottom:calc(142px + env(safe-area-inset-bottom))}
   body.has-fab .toast{bottom:calc(130px + env(safe-area-inset-bottom))}
   .sheet .lead{margin:-4px 0 0;color:var(--pine-2);font-size:16px}
@@ -213,6 +224,10 @@
 </nav>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <button class="savefab" id="saveFab" type="button" aria-live="polite" hidden></button>
+<div class="addnote" id="notice" role="status" aria-live="polite" hidden>
+  <p id="noticeText"></p>
+  <div class="nbtns"><button type="button" class="nshow" id="noticeShow">Show me</button><button type="button" class="nclose" id="noticeClose" aria-label="Close">OK</button></div>
+</div>
 
 <div class="sheet-bg" id="confirmBg">
   <div class="sheet" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmText">
@@ -850,6 +865,38 @@ function storeOptions(current){
   return `<option value="">Not sure yet</option>` + stores.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join("") + `<option value="N/A">No store needed</option>`;
 }
 
+/* ===== After adding: say where the item went ===== */
+let noticeGo = null;
+function addedNotice(it){
+  const x = state.data.items.find(i => i.item === it.item && (i.section || "") === (it.section || "") && i.row > 0)
+         || state.data.items.find(i => i.item === it.item);
+  if (!x) return;
+  const name = `<b>${esc(x.item)}</b>`;
+  let msg, go;
+  if (isFamilyItem(x)){
+    msg = `${name} was added. It's on every family's Packing list, under ${esc(x.section || "Other")}.`;
+    go = () => { state.tab = "mine"; state.mineView = "pack"; };
+  } else if (x.who === state.me){
+    msg = `${name} was added. It's on your Shopping list, under ${esc(storeLabel(x.store))}.`;
+    go = () => { state.tab = "mine"; state.mineView = "shop"; };
+  } else {
+    msg = `${name} was added. It's on the Shopping tab, under ${esc(storeLabel(x.store))}. Nobody has taken it yet.`;
+    go = () => { state.tab = "shop"; state.shopStore = "all"; };
+  }
+  $("#noticeText").innerHTML = msg;
+  noticeGo = () => { go(); try { history.pushState({tab: state.tab}, "", "#" + state.tab); } catch(e){} render(); showItem(x.row); };
+  $("#notice").hidden = false;
+  clearTimeout(addedNotice._t); addedNotice._t = setTimeout(hideNotice, 10000);
+}
+function hideNotice(){ $("#notice").hidden = true; noticeGo = null; }
+function showItem(rowNum){
+  const b = document.querySelector(`#view [data-edit-row="${rowNum}"]`); if (!b) return;
+  const li = b.closest("li"); li.scrollIntoView({block: "center", behavior: "smooth"});
+  li.classList.remove("flash"); void li.offsetWidth; li.classList.add("flash");
+}
+$("#noticeShow").onclick = () => { const g = noticeGo; hideNotice(); if (g) g(); };
+$("#noticeClose").onclick = hideNotice;
+
 /* ===== Add an item ===== */
 const DEFAULT_SECTIONS = ["Equipment","Food","Supplies","Kids","Extra"];
 const DEFAULT_CATEGORIES = ["Meat","Dairy","Fruit & veg","Basics","Snacks","Condiments","Toys","Cookware"];
@@ -877,15 +924,14 @@ $("#addForm").onsubmit = e => {
     brings:d.get("brings"), store:d.get("store"), qty:String(d.get("qty") || "").trim(), notes:String(d.get("notes") || "").trim(), mine: !!d.get("mine")};
   if (!it.item) return;
   closeAdd();
-  send(it, {now: true});
-  toast(`Added ${it.item}`);
+  send(it, {now: true, onOk: () => addedNotice(it)});
 };
 
 /* ===== Taps ===== */
 document.addEventListener("click", e => {
   const t = e.target.closest("button, a"); if (!t || !state.me) return;
   if (t.id === "saveFab"){ flush(); return; }
-  if (t.closest("#confirmBg")) return;
+  if (t.closest("#confirmBg") || t.closest("#notice")) return;
   if (t.matches("nav.tabs button")){ goTab(t.dataset.tab); return; }
   const rowNum = +(t.dataset.row || t.dataset.take || t.dataset.release || t.dataset.editRow || 0);
   if (t.closest("details.skip")) state.openSkip = true;
