@@ -45,8 +45,12 @@
 
   ul.list{list-style:none;margin:0;padding:0}
   .row{display:grid;grid-template-columns:30px 1fr auto;gap:12px;align-items:center;padding:11px 18px;border-bottom:1px solid var(--rule);background:var(--birch)}
-  .row .open{all:unset;display:block;cursor:pointer;min-height:24px}
-  .row .open:focus-visible{outline:3px solid var(--blaze);outline-offset:3px;border-radius:3px}
+  .side{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+  .editbtn{display:inline-flex;align-items:center;gap:4px;background:#fff;border:1.5px solid #B9C6B8;border-radius:6px;padding:4px 9px;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:15.5px;color:var(--pine-2);white-space:nowrap}
+  .editbtn svg{width:14px;height:14px}
+  .editbtn:active{background:var(--lichen)}
+  .estatus{display:inline-block;margin:0 0 8px;font-size:13.5px;color:var(--pine-2);background:#E8EFE6;border-radius:4px;padding:2px 8px}
+  .estatus.err{background:#F8DEDA;color:#8E2A22}
   .row .name{font-weight:500;display:block}
   .row .qty{display:block;font-size:14px;color:var(--stone)}
   .row .note{display:block;font-size:13px;color:var(--stone);font-style:italic}
@@ -271,6 +275,7 @@ const state = {
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const PENCIL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>';
 const CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 function colorOf(name){
   if (!name) return "var(--pine)";
@@ -318,13 +323,14 @@ window.addEventListener("popstate", e => {
 });
 
 // Changes go out one at a time, in order. The screen updates right away; the sheet's answer replaces it when the line is clear.
-function send(body, optimistic){
+function send(body, optimistic, onOk){
   if (optimistic) { optimistic(); render(); }
   state.pending++;
   state.queue = state.queue.then(async () => {
     try {
       const j = await post(Object.assign({family: state.me, code: state.code}, body));
       if (state.pending === 1) setData(j);
+      if (onOk) onOk(j);
     } catch (e) {
       const m = String(e.message || e);
       if (m.startsWith("CODE:")) { toast(m.slice(5).trim(), true); signOut(true); }
@@ -379,8 +385,8 @@ function renderSign(){
 function row(x, o){
   return `<li class="row${o.checked ? " done" : ""}">
     <button class="tick" role="checkbox" aria-checked="${o.checked}" aria-label="${esc((o.kind === "pack" ? "Packed: " : "Bought: ") + x.item)}" data-kind="${o.kind}" data-row="${x.row}" style="--c:${o.color}">${CHECK}</button>
-    <button class="open" data-edit-row="${x.row}" aria-label="Change amount or note for ${esc(x.item)}"><span class="name">${esc(x.item)}</span>${x.qty ? `<span class="qty">${esc(x.qty)}</span>` : ""}${x.notes ? `<span class="note">${esc(x.notes)}</span>` : ""}</button>
-    <div>${o.side || ""}</div></li>`;
+    <div><span class="name">${esc(x.item)}</span>${x.qty ? `<span class="qty">${esc(x.qty)}</span>` : ""}${x.notes ? `<span class="note">${esc(x.notes)}</span>` : ""}</div>
+    <div class="side">${o.side || ""}<button class="editbtn" data-edit-row="${x.row}" aria-label="Edit ${esc(x.item)}">${PENCIL}Edit</button></div></li>`;
 }
 
 function viewMine(){
@@ -389,7 +395,7 @@ function viewMine(){
   if (!buys.length){
     h += `<div class="empty">You haven't taken any group items yet. Take a few from the shopping list so nothing gets bought twice.<br><button class="take" data-go="open">See items nobody has taken</button></div>`;
   } else {
-    h += `<p class="lead">Grouped by store. Tap an item to change the amount or add a note.<button class="textbtn" data-editmine="1">${state.editMine ? "Done" : "Give items back"}</button></p>`;
+    h += `<p class="lead">Grouped by store. Tap Edit to change the amount, cost or note.<button class="textbtn" data-editmine="1">${state.editMine ? "Done" : "Give items back"}</button></p>`;
     for (const s of storesOf(buys)){
       const xs = buys.filter(x => x.store === s);
       h += `<h3 class="grp">${esc(storeLabel(s))}<small>${xs.length}</small></h3><ul class="list">`;
@@ -424,7 +430,7 @@ function viewShop(){
       ${stores.map(s => `<button class="chip" data-store="${esc(s)}" aria-pressed="${state.shopStore === s}">${esc(storeLabel(s))}<small>${count(s)}</small></button>`).join("")}
     </div>
     <label class="toggle"><input type="checkbox" id="onlyOpen" ${state.onlyOpen ? "checked" : ""}> Only items nobody has taken</label>
-    <p class="lead">Tap an item to change the amount or add a note.<button class="textbtn" data-additem="1">Add an item</button></p>`;
+    <p class="lead">Tap Edit to change the amount, cost or note.<button class="textbtn" data-additem="1">Add an item</button></p>`;
   let any = false;
   for (const s of (state.shopStore === "all" ? stores : [state.shopStore])){
     const xs = pool.filter(x => x.store === s); if (!xs.length) continue; any = true;
@@ -483,7 +489,7 @@ function viewCost(){
   const missing = d.items.filter(x => !isFamilyItem(x) && x.done && !(x.costNum > 0)).length;
   let h = `<div class="total"><div><span>Spent so far</span><b>${money(total)}</b></div><div><span>Rough share per family</span><b>${money(share)}</b></div></div>
     <p class="notice">This is a rough guide, not an exact amount. It depends on how many extras there are and who takes extras. Use it to settle up at the end of the trip.</p>
-    <p class="lead" style="margin-top:12px">${missing ? `${missing} bought ${missing === 1 ? "item doesn't" : "items don't"} have a cost yet. ` : ""}To add what something cost, tap the item on My list or Shopping.</p>
+    <p class="lead" style="margin-top:12px">${missing ? `${missing} bought ${missing === 1 ? "item doesn't" : "items don't"} have a cost yet. ` : ""}To add what something cost, tap Edit next to the item on My list or Shopping.</p>
     <h2 class="sec">What each family paid</h2>`;
   const block = (name, color, xs, label) => {
     const paid = xs.reduce((s, x) => s + x.costNum, 0);
@@ -506,16 +512,24 @@ function niceTime(t){
   const m = /^(\d{1,2}):(\d{2})/.exec(t || ""); if (!m) return "";
   const H = +m[1]; return `${((H + 11) % 12) + 1}:${m[2]} ${H < 12 ? "AM" : "PM"}`;
 }
+function emailLine(r, tm){
+  if (!r.email) return "";
+  const st = String(r.emailStatus || "");
+  if (/^Sent/.test(st)) return `<span class="estatus">Email sent</span>`;
+  if (/^Skipped/.test(st)) return `<span class="estatus err">Not emailed: the time had passed</span>`;
+  if (/^Error/.test(st)) return `<span class="estatus err">The email didn't send</span>`;
+  return `<span class="estatus">Will email at ${tm || "9:00 AM"}</span>`;
+}
 function viewRem(){
   const list = [...(state.data.reminders || [])].sort((a,b) => (a.date + a.time).localeCompare(b.date + b.time));
-  let h = `<h2 class="sec">Reminders</h2><p class="lead">Everyone sees the same reminders. Add one to your phone's calendar, or send it on WhatsApp.</p>`;
+  let h = `<h2 class="sec">Reminders</h2><p class="lead">Everyone sees the same reminders. Put in your email to get it as an email, add it to your phone's calendar, or send it on WhatsApp.</p>`;
   if (!list.length) h += `<div class="empty">No reminders yet. Add the first one below.</div>`;
   h += `<ul class="list">`;
   for (const r of list){
     const d = niceDate(r.date), tm = niceTime(r.time);
     const forTxt = r.for && r.for !== "Everyone" ? `for the ${esc(r.for)} family` : "for everyone";
     h += `<li class="rem"><div class="date"><span>${d.dow}</span><b>${d.day}</b><span>${d.mon}</span></div>
-      <div><h4>${esc(r.text)}</h4><p>${tm ? tm + ", " : ""}${forTxt}${r.by ? `. Added by ${esc(r.by)}` : ""}</p>
+      <div><h4>${esc(r.text)}</h4><p>${tm ? tm + ", " : ""}${forTxt}${r.by ? `. Added by ${esc(r.by)}` : ""}</p>${emailLine(r, tm)}
       <div class="acts"><button data-ics="${esc(r.id)}">Add to calendar</button>
       <a href="https://wa.me/?text=${encodeURIComponent("Camping reminder: " + r.text + " (" + d.dow + " " + d.mon + " " + d.day + (tm ? ", " + tm : "") + ")")}" target="_blank" rel="noopener">Send on WhatsApp</a>
       <button data-delrem="${esc(r.id)}">Remove</button></div></div></li>`;
@@ -529,9 +543,11 @@ function viewRem(){
       <label class="f">Time<input class="in" type="time" name="time" value="09:00"></label>
     </div>
     <label class="f">For<select class="in" name="for"><option>Everyone</option>${state.data.families.map(f => `<option>${esc(f)}</option>`).join("")}</select></label>
+    <label class="f">Your email (optional)<input class="in" type="email" name="email" inputmode="email" autocomplete="email" placeholder="you@example.com" value="${esc(store.get("camping-email") || "")}"></label>
+    <p class="fine" style="margin:-4px 0 0">We'll email you this reminder at the date and time above.</p>
     <button class="solid" style="margin:4px 0 0" type="submit">Add reminder</button>
   </form>
-  <p class="fine">The app can't buzz your phone by itself. "Add to calendar" puts the reminder in your phone's calendar with an alert.</p>`;
+  <p class="fine">Emails come from the trip organizer's Gmail as "Thanksgiving Camping". "Add to calendar" puts the reminder in your phone's calendar with an alert.</p>`;
   return h;
 }
 
@@ -561,8 +577,13 @@ function render(){
     if (!dateIn.value) dateIn.value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0,10);
     f.onsubmit = e => {
       e.preventDefault(); const d = new FormData(f);
-      send({action:"addReminder", text:d.get("text"), date:d.get("date"), time:d.get("time"), for:d.get("for")});
-      toast("Reminder added"); f.reset();
+      const email = String(d.get("email") || "").trim();
+      if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ toast("That email doesn't look right.", true); return; }
+      if (email) store.set("camping-email", email);
+      send({action:"addReminder", text:d.get("text"), date:d.get("date"), time:d.get("time"), for:d.get("for"), email},
+        null, () => toast(email ? "Reminder added. You'll get an email." : "Reminder added"));
+      f.reset();
+      const ei = f.querySelector("input[name=email]"); if (ei) ei.value = email;
     };
   }
 }

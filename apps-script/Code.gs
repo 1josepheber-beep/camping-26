@@ -12,6 +12,8 @@
  * - Keeps family codes on a hidden tab called "App codes" (Family | Code).
  *   Change a family's code there any time. Default code is the last name followed by #.
  * - Keeps shared reminders on a tab called "App reminders" and a history of changes on "App log".
+ * - Emails a reminder to the person who set it, at the date and time they chose (Houston time).
+ *   Turn this on once by running setupEmailReminders from the editor.
  */
 
 var LIST_TAB = 'Thanksgiving 26 List';
@@ -164,21 +166,102 @@ function codeOk_(family, code) {
 
 /* ---------- reminders + log ---------- */
 
+var REMINDER_HEADERS = ['Id', 'Date', 'Time', 'Reminder', 'For', 'Added by', 'Email to', 'Email status'];
+var TIME_ZONE = 'America/Chicago';
+var APP_LINK = 'https://1josepheber-beep.github.io/camping-26/';
+
 function remindersSheet_() {
   var sh = ss_().getSheetByName(REMINDERS_TAB);
-  if (!sh) {
-    sh = ss_().insertSheet(REMINDERS_TAB);
-    sh.getRange(1, 1, 1, 6).setValues([['Id', 'Date', 'Time', 'Reminder', 'For', 'Added by']]);
-  }
+  if (!sh) sh = ss_().insertSheet(REMINDERS_TAB);
+  var head = sh.getRange(1, 1, 1, REMINDER_HEADERS.length).getDisplayValues()[0];
+  if (head.join('|') !== REMINDER_HEADERS.join('|')) sh.getRange(1, 1, 1, REMINDER_HEADERS.length).setValues([REMINDER_HEADERS]);
   return sh;
 }
 
+// The app only learns whether a reminder will be emailed and whether it went out. Email addresses stay in the sheet.
 function readReminders_() {
   var sh = ss_().getSheetByName(REMINDERS_TAB);
   if (!sh || sh.getLastRow() < 2) return [];
-  return sh.getRange(2, 1, sh.getLastRow() - 1, 6).getDisplayValues()
+  return sh.getRange(2, 1, sh.getLastRow() - 1, REMINDER_HEADERS.length).getDisplayValues()
     .filter(function (r) { return String(r[3]).trim(); })
-    .map(function (r) { return { id: String(r[0]), date: String(r[1]), time: String(r[2]), text: String(r[3]), for: String(r[4]) || 'Everyone', by: String(r[5]) }; });
+    .map(function (r) {
+      return {
+        id: String(r[0]), date: String(r[1]), time: String(r[2]), text: String(r[3]),
+        for: String(r[4]) || 'Everyone', by: String(r[5]),
+        email: String(r[6]).trim() ? true : false,
+        emailStatus: String(r[7] || '')
+      };
+    });
+}
+
+function cleanEmails_(s) {
+  var list = String(s || '').split(/[,;\s]+/).map(function (x) { return x.trim(); }).filter(String);
+  list.forEach(function (x) {
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x)) throw new Error('"' + x + '" doesn\'t look like an email address.');
+  });
+  return list.join(', ');
+}
+
+function dueDate_(date, time) {
+  var t = /^\d{1,2}:\d{2}/.test(String(time || '')) ? String(time).slice(0, 5) : '09:00';
+  return Utilities.parseDate(String(date).slice(0, 10) + ' ' + t, TIME_ZONE, 'yyyy-MM-dd HH:mm');
+}
+
+/**
+ * Runs every 5 minutes (set up by setupEmailReminders). Emails each reminder to the address
+ * the person typed, once its date and time has come, and marks it Sent.
+ */
+function sendDueReminders() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) return;
+  try {
+    var sh = ss_().getSheetByName(REMINDERS_TAB);
+    if (!sh || sh.getLastRow() < 2) return;
+    var rows = sh.getRange(2, 1, sh.getLastRow() - 1, REMINDER_HEADERS.length).getDisplayValues();
+    var now = new Date();
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var to = String(r[6]).trim(), status = String(r[7]).trim();
+      if (!to || !String(r[3]).trim() || /^(Sent|Skipped)/.test(status)) continue;
+      var due;
+      try { due = dueDate_(r[1], r[2]); } catch (e) { sh.getRange(i + 2, 8).setValue('Error: bad date'); continue; }
+      if (due.getTime() > now.getTime()) continue;
+      if (now.getTime() - due.getTime() > 24 * 3600 * 1000) { sh.getRange(i + 2, 8).setValue('Skipped: time had already passed'); continue; }
+      var when = Utilities.formatDate(due, TIME_ZONE, "EEE, MMM d 'at' h:mm a");
+      var forTxt = r[4] && r[4] !== 'Everyone' ? 'For the ' + r[4] + ' family' : 'For everyone';
+      try {
+        MailApp.sendEmail({
+          to: to,
+          name: 'Thanksgiving Camping',
+          subject: 'Camping reminder: ' + r[3],
+          body: r[3] + '\n\n' + when + '\n' + forTxt + '\n\nOpen the camping list: ' + APP_LINK,
+          htmlBody: '<div style="font-family:Arial,sans-serif;font-size:16px;color:#1D3A2C">' +
+            '<p style="font-size:20px;font-weight:bold;margin:0 0 8px">' + esc_(r[3]) + '</p>' +
+            '<p style="margin:0 0 4px">' + esc_(when) + '</p><p style="margin:0 0 16px;color:#5E6E63">' + esc_(forTxt) + '</p>' +
+            '<p><a href="' + APP_LINK + '" style="color:#2D6BB0">Open the camping list</a></p></div>'
+        });
+        sh.getRange(i + 2, 8).setValue('Sent ' + Utilities.formatDate(new Date(), TIME_ZONE, 'MMM d, h:mm a'));
+      } catch (err) {
+        sh.getRange(i + 2, 8).setValue('Error: ' + String(err && err.message || err).slice(0, 120));
+      }
+    }
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function esc_(s) {
+  return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; });
+}
+
+/** Run this once from the Apps Script editor. It makes sendDueReminders run every 5 minutes. */
+function setupEmailReminders() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === 'sendDueReminders') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('sendDueReminders').timeBased().everyMinutes(5).create();
+  remindersSheet_();
+  return 'Email reminders are on. Checking every 5 minutes.';
 }
 
 function log_(family, what, item) {
@@ -242,8 +325,13 @@ function apply_(b) {
   if (b.action === 'addReminder') {
     var text = String(b.text || '').trim();
     if (!text) throw new Error('Write what to remind.');
+    var emails = cleanEmails_(b.email);
+    if (emails) {
+      var due = dueDate_(b.date, b.time);
+      if (due.getTime() < new Date().getTime() - 60 * 1000) throw new Error('That time has already passed. Pick a later time to get an email.');
+    }
     var rs = remindersSheet_();
-    rs.appendRow([String(new Date().getTime()), "'" + String(b.date || ''), "'" + String(b.time || ''), text, String(b.for || 'Everyone'), family]);
+    rs.appendRow([String(new Date().getTime()), "'" + String(b.date || ''), "'" + String(b.time || ''), text, String(b.for || 'Everyone'), family, emails, emails ? 'Waiting' : '']);
     log_(family, 'Added reminder', text);
     return {};
   }
