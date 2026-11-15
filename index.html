@@ -315,7 +315,7 @@ function saveLogin(v){
 function loadLogin(){ const a = store.get(LOGIN_KEY); return (a && a.family && a.code) ? a : readCookie(); }
 function clearLogin(){ store.del(LOGIN_KEY); store.del(DATA_KEY); try { document.cookie = "camping_login=; max-age=0; path=/"; } catch(e){} }
 const state = {
-  data: null, me: null, code: null, tab: "mine", shopStore: "all", onlyOpen: false, editMine: false,
+  data: null, me: null, code: null, tab: "mine", shopStore: "all", onlyOpen: true, editMine: false,
   outbox: [], inflight: null, saveState: "idle", changeSeq: 0, autoT: null, flushAgain: false, onOk: {},
   lastSync: null, mineView: null, openSkip: false, logOpen: false, logShown: 5
 };
