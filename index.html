@@ -512,14 +512,21 @@ window.addEventListener("beforeunload", e => { if (unsavedCount()) { beaconUnsav
 window.addEventListener("online", () => { if (state.outbox.length) flush(); });
 
 /* ===== Helpers over the data ===== */
-const items = () => (state.data ? state.data.items : []).filter(x => !SKIP.test(x.qty + " " + x.notes));
+// Lists in the app are always A to Z inside each group (store or section), whatever order the sheet is in.
+const byName = (a, b) => a.item.localeCompare(b.item, "en", {sensitivity: "base", numeric: true});
+const items = () => (state.data ? state.data.items : []).filter(x => !SKIP.test(x.qty + " " + x.notes)).sort(byName);
 const isFamilyItem = x => x.brings.toLowerCase() === "each family";
 const groupItems = () => items().filter(x => !isFamilyItem(x));
 const familyItems = () => items().filter(isFamilyItem);
 const skipped = fam => new Set(((state.data && state.data.notNeeded) || {})[fam] || []);
 const packList = fam => { const sk = skipped(fam); return familyItems().filter(x => !sk.has(x.item)); };
 const boughtBy = n => groupItems().filter(x => x.who === n);
-const sectionsOf = xs => [...new Set(xs.map(x => x.section || "Other"))];
+// Sections keep the sheet's order (Equipment, Food, Supplies, ...).
+const sectionsOf = xs => {
+  const first = {};
+  (state.data ? state.data.items : []).forEach(x => { const s = x.section || "Other"; if (x.row > 0 && !(first[s] <= x.row)) first[s] = x.row; });
+  return [...new Set(xs.map(x => x.section || "Other"))].sort((a, b) => (first[a] ?? 1e9) - (first[b] ?? 1e9));
+};
 function storesOf(xs){
   const have = new Set(xs.map(x => x.store));
   const known = STORE_ORDER.filter(s => have.has(s));
@@ -670,7 +677,7 @@ function viewFams(){
 const money = n => "$" + (Math.round(n * 100) / 100).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 function viewCost(){
   const d = state.data, fams = d.families;
-  const paidItems = d.items.filter(x => !isFamilyItem(x) && x.costNum > 0);
+  const paidItems = d.items.filter(x => !isFamilyItem(x) && x.costNum > 0).sort(byName);
   const total = paidItems.reduce((s, x) => s + x.costNum, 0);
   const share = fams.length ? total / fams.length : 0;
   const missing = d.items.filter(x => !isFamilyItem(x) && x.done && !(x.costNum > 0)).length;
