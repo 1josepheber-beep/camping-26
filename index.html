@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#1D3A2C">
+<title>Thanksgiving Camping</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --pine:#1D3A2C; --pine-2:#2A4D3B; --lichen:#E4EADF; --birch:#F7F9F4;
+    --stone:#5E6E63; --rule:#D3DBCE; --blaze:#F0B92B; --ink-on-pine:#EEF3EA;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--lichen);color:var(--pine);font-family:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.4;-webkit-tap-highlight-color:transparent}
+  button{font:inherit;color:inherit;cursor:pointer}
+  :focus-visible{outline:3px solid var(--blaze);outline-offset:2px}
+
+  .app{max-width:520px;margin:0 auto;min-height:100vh;background:var(--birch);padding-bottom:calc(76px + env(safe-area-inset-bottom));box-shadow:0 0 0 1px var(--rule)}
+
+  .sign{background:var(--pine);color:var(--ink-on-pine);padding:14px 18px 18px}
+  .who{display:flex;align-items:center;gap:10px;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:19px}
+  .blaze{display:inline-block;width:10px;height:26px;border-radius:2px;background:var(--c,#999);flex:none;box-shadow:inset 0 0 0 1px rgba(0,0,0,.12)}
+  .blaze.sm{width:7px;height:16px}
+  .switch{margin-left:auto;background:transparent;border:1.5px solid rgba(238,243,234,.35);border-radius:6px;padding:3px 10px;font-family:"Barlow Condensed",sans-serif;font-weight:500;font-size:16px;color:var(--ink-on-pine)}
+  .sign h1{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:30px;line-height:1.05;margin:10px 0 2px;letter-spacing:.2px}
+  .sync{margin:0;font-size:13.5px;color:#B9C7BC;display:flex;gap:8px;align-items:center}
+  .sync button{background:none;border:0;padding:0;color:#E3EBE2;text-decoration:underline;text-underline-offset:3px;font-size:13.5px}
+  .meters{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px}
+  .meter span{display:block;font-size:14px;color:#CFDACF;margin-bottom:5px}
+  .meter b{color:#fff;font-weight:600}
+  .bar{height:7px;border-radius:4px;background:rgba(238,243,234,.16);overflow:hidden}
+  .bar i{display:block;height:100%;width:0;background:var(--c,var(--blaze));border-radius:4px;transition:width .35s ease}
+
+  h2.sec{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:25px;margin:0;padding:22px 18px 2px;display:flex;align-items:baseline;gap:10px}
+  h2.sec small{font-family:"Barlow",sans-serif;font-weight:500;font-size:14px;color:var(--stone);margin-left:auto}
+  .lead{margin:2px 18px 6px;color:var(--stone);font-size:14.5px}
+  .textbtn{background:none;border:0;padding:0;color:var(--pine);font-weight:600;text-decoration:underline;text-underline-offset:3px;margin-left:6px}
+  h3.grp{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:18px;margin:0;padding:16px 18px 6px;color:var(--pine-2);display:flex;align-items:baseline;border-bottom:1px solid var(--rule)}
+  h3.grp small{margin-left:auto;font-family:"Barlow",sans-serif;font-weight:500;font-size:13.5px;color:var(--stone)}
+
+  ul.list{list-style:none;margin:0;padding:0}
+  .row{display:grid;grid-template-columns:30px 1fr auto;gap:12px;align-items:center;padding:11px 18px;border-bottom:1px solid var(--rule);background:var(--birch)}
+  .row .open{all:unset;display:block;cursor:pointer;min-height:24px}
+  .row .open:focus-visible{outline:3px solid var(--blaze);outline-offset:3px;border-radius:3px}
+  .row .name{font-weight:500;display:block}
+  .row .qty{display:block;font-size:14px;color:var(--stone)}
+  .row .note{display:block;font-size:13px;color:var(--stone);font-style:italic}
+  .row.done .name{text-decoration:line-through;text-decoration-thickness:1.5px;color:var(--stone)}
+  .row.done{background:#F0F3EC}
+
+  .tick{width:28px;height:28px;border-radius:4px;border:2px solid #9EAEA2;background:#fff;display:grid;place-items:center;padding:0}
+  .tick svg{width:18px;height:18px;opacity:0;transform:scale(.6);transition:opacity .15s ease,transform .18s ease}
+  .tick[aria-checked="true"]{background:var(--c,var(--pine));border-color:var(--c,var(--pine))}
+  .tick[aria-checked="true"] svg{opacity:1;transform:scale(1)}
+
+  .tag{display:inline-flex;align-items:center;gap:6px;font-size:14px;color:var(--pine-2);white-space:nowrap}
+  .take{background:#fff;border:1.5px solid var(--pine);border-radius:6px;padding:4px 12px;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:16px;color:var(--pine);white-space:nowrap}
+  .take:active{background:var(--lichen)}
+  .solid{display:inline-block;margin:14px 18px 0;background:var(--pine);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:18px}
+  .empty{margin:12px 18px 4px;padding:14px 16px;background:#fff;border:1.5px dashed #B7C4B6;border-radius:8px;color:var(--stone);font-size:15px}
+  .empty button{margin-top:10px}
+
+  .chips{display:flex;gap:8px;overflow-x:auto;padding:14px 18px 4px;scrollbar-width:none}
+  .chips::-webkit-scrollbar{display:none}
+  .chip{flex:none;border:1.5px solid #B9C6B8;background:#fff;border-radius:999px;padding:5px 13px;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:16.5px;color:var(--pine-2)}
+  .chip small{font-family:"Barlow",sans-serif;font-weight:500;font-size:13px;color:var(--stone);margin-left:4px}
+  .chip[aria-pressed="true"]{background:var(--pine);border-color:var(--pine);color:#fff}
+  .chip[aria-pressed="true"] small{color:#C8D4C9}
+  .toggle{display:flex;align-items:center;gap:10px;margin:10px 18px 4px;font-size:15px;color:var(--pine-2)}
+  .toggle input{width:20px;height:20px;accent-color:var(--pine)}
+
+  .trip{margin:16px 18px 4px;background:#fff;border:1px solid var(--rule);border-radius:10px;padding:14px 16px}
+  .trip p{margin:0 0 10px}
+  .trip dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:15px}
+  .trip dt{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:17px}
+  .trip dd{margin:0;color:var(--pine-2)}
+  .callout{margin:14px 18px 0;padding:14px 16px;border-radius:10px;background:#FDF3D6;border:1px solid #EBCF7E;display:flex;gap:12px;align-items:center}
+  .callout p{margin:0;flex:1}
+  .fam{display:grid;grid-template-columns:12px 1fr;gap:14px;padding:14px 18px;border-bottom:1px solid var(--rule)}
+  .fam .blaze{height:100%;min-height:52px;width:12px}
+  .fam h4{margin:0;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:20px;display:flex;align-items:baseline}
+  .fam h4 small{margin-left:auto;font-family:"Barlow",sans-serif;font-weight:500;font-size:13px;color:var(--stone)}
+  .fam p{margin:2px 0 8px;font-size:14.5px;color:var(--stone)}
+  .fam .bar{height:6px;background:#DDE4D8}
+  .log{padding:8px 18px 4px}
+  .log p{margin:0;padding:8px 0;border-bottom:1px solid var(--rule);font-size:14.5px;display:grid;grid-template-columns:7px 1fr;gap:10px;align-items:start}
+  .log p .blaze{height:16px;margin-top:3px}
+  .log time{color:var(--stone);font-size:13px}
+
+  .rem{display:grid;grid-template-columns:62px 1fr;gap:14px;padding:14px 18px;border-bottom:1px solid var(--rule)}
+  .date{border-radius:8px;background:var(--pine);color:#fff;text-align:center;padding:6px 0 7px;font-family:"Barlow Condensed",sans-serif;line-height:1.05;align-self:start}
+  .date span{display:block;font-size:14px;color:#C9D6CB;font-weight:500}
+  .date b{display:block;font-size:24px;font-weight:700}
+  .rem h4{margin:0;font-size:16.5px;font-weight:600}
+  .rem p{margin:2px 0 8px;font-size:14px;color:var(--stone)}
+  .acts{display:flex;gap:8px;flex-wrap:wrap}
+  .acts button,.acts a{background:#fff;border:1.5px solid #B9C6B8;border-radius:6px;padding:4px 10px;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:15px;color:var(--pine-2);text-decoration:none;white-space:nowrap}
+  form.card{margin:16px 18px 0;padding:14px 16px;background:#fff;border:1px solid var(--rule);border-radius:10px;display:grid;gap:10px}
+  form.card h3{margin:0;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:20px}
+  label.f{display:grid;gap:4px;font-size:14px;color:var(--stone)}
+  input.in,select.in,textarea.in{font:inherit;color:var(--pine);border:1.5px solid #B9C6B8;border-radius:6px;padding:9px 10px;background:#fff;width:100%}
+  textarea.in{min-height:76px;resize:vertical}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .fine{margin:12px 18px 0;font-size:13.5px;color:var(--stone)}
+
+  nav.tabs{position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:100%;max-width:520px;background:var(--pine);display:grid;grid-template-columns:repeat(4,1fr);padding-bottom:env(safe-area-inset-bottom);z-index:6}
+  nav.tabs button{background:transparent;border:0;color:#AFC0B3;padding:14px 4px 16px;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:17.5px;position:relative}
+  nav.tabs button[aria-current="page"]{color:#fff}
+  nav.tabs button[aria-current="page"]::before{content:"";position:absolute;top:0;left:22%;right:22%;height:4px;border-radius:0 0 3px 3px;background:var(--blaze)}
+  nav.tabs[hidden]{display:none}
+
+  .toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translate(-50%,12px);background:var(--pine);color:#fff;padding:10px 16px;border-radius:8px;font-size:15px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:30;max-width:90vw;text-align:center}
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+  .toast.err{background:#8E2A22}
+
+  /* Full-screen panels: family picker, code entry, loading */
+  .screen{position:fixed;inset:0;background:var(--pine);color:var(--ink-on-pine);z-index:20;overflow:auto;display:none}
+  .screen.open{display:block}
+  .screen .in2{max-width:520px;margin:0 auto;padding:40px 22px 30px}
+  .screen h2{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:34px;margin:0 0 4px;line-height:1.1}
+  .screen p{margin:0 0 22px;color:#B9C7BC}
+  .fbtn{display:flex;align-items:center;gap:14px;width:100%;text-align:left;background:var(--pine-2);border:0;border-radius:8px;padding:14px 16px;margin-bottom:10px;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:22px;color:#fff}
+  .fbtn .blaze{height:30px;width:12px}
+  .codebox{display:grid;gap:12px}
+  .codebox input{font:inherit;font-size:20px;padding:12px 14px;border-radius:8px;border:2px solid #4D6B5A;background:#fff;color:var(--pine)}
+  .codebox .go{background:var(--blaze);color:var(--pine);border:0;border-radius:8px;padding:12px;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:21px}
+  .codebox .back{background:none;border:0;color:#D6E0D7;text-decoration:underline;text-underline-offset:3px;justify-self:start;padding:4px 0}
+  .codebox .msg{min-height:22px;color:#FFD3CC;margin:0}
+  .chosen{display:flex;align-items:center;gap:12px;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:26px;margin-bottom:6px}
+
+  /* Edit sheet */
+  .sheet-bg{position:fixed;inset:0;background:rgba(18,32,25,.5);z-index:25;display:none;align-items:flex-end;justify-content:center}
+  .sheet-bg.open{display:flex}
+  .sheet{background:var(--birch);width:100%;max-width:520px;border-radius:14px 14px 0 0;padding:18px 18px calc(18px + env(safe-area-inset-bottom));display:grid;gap:12px}
+  .sheet h3{margin:0;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:24px}
+  .sheet .meta{margin:-6px 0 0;color:var(--stone);font-size:14px}
+  .sheet .btns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .sheet .btns button{border-radius:8px;padding:11px;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:19px}
+  .sheet .cancel{background:#fff;border:1.5px solid #B9C6B8;color:var(--pine)}
+  .sheet .save{background:var(--pine);border:0;color:#fff}
+
+  @media (prefers-reduced-motion: reduce){*{transition:none !important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="sign" id="sign"></header>
+  <main id="view"></main>
+</div>
+<nav class="tabs" aria-label="Sections" hidden>
+  <button data-tab="mine">My list</button>
+  <button data-tab="shop">Shopping</button>
+  <button data-tab="fams">Families</button>
+  <button data-tab="rem">Reminders</button>
+</nav>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="screen" id="pickScreen" role="dialog" aria-modal="true" aria-labelledby="pickTitle">
+  <div class="in2">
+    <h2 id="pickTitle">Select your family</h2>
+    <p>You'll need your family's code.</p>
+    <div id="pickList"></div>
+  </div>
+</div>
+
+<div class="screen" id="codeScreen" role="dialog" aria-modal="true" aria-labelledby="codeTitle">
+  <div class="in2">
+    <div class="chosen" id="chosen"></div>
+    <h2 id="codeTitle">Enter your code</h2>
+    <p>Ask Joseph if you don't have it.</p>
+    <form class="codebox" id="codeForm" autocomplete="off">
+      <input id="codeInput" type="password" inputmode="text" autocapitalize="none" spellcheck="false" aria-label="Family code" required>
+      <p class="msg" id="codeMsg" role="alert"></p>
+      <button class="go" type="submit" id="codeGo">Go in</button>
+      <button class="back" type="button" id="codeBack">Choose a different family</button>
+    </form>
+  </div>
+</div>
+
+<div class="screen open" id="loadScreen" aria-live="polite">
+  <div class="in2"><h2>Thanksgiving Camping</h2><p id="loadMsg">Loading the list…</p><div id="loadAct"></div></div>
+</div>
+
+<div class="sheet-bg" id="editBg">
+  <form class="sheet" id="editForm" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+    <h3 id="editTitle"></h3>
+    <p class="meta" id="editMeta"></p>
+    <label class="f">Amount<input class="in" name="qty" id="editQty" placeholder="e.g. 12 packs"></label>
+    <label class="f">Note<textarea class="in" name="notes" id="editNotes" placeholder="Anything people should know"></textarea></label>
+    <div class="btns"><button type="button" class="cancel" id="editCancel">Cancel</button><button type="submit" class="save">Save</button></div>
+  </form>
+</div>
+
+<div class="sheet-bg" id="addBg">
+  <form class="sheet" id="addForm" role="dialog" aria-modal="true" aria-labelledby="addTitle" style="max-height:92vh;overflow:auto">
+    <h3 id="addTitle">Add an item</h3>
+    <label class="f">Item<input class="in" name="item" required placeholder="e.g. Packing tape"></label>
+    <div class="two">
+      <label class="f">Section<select class="in" name="section" id="addSection"></select></label>
+      <label class="f">Category<select class="in" name="category" id="addCategory"></select></label>
+    </div>
+    <label class="f">Who brings it<select class="in" name="brings" id="addBrings">
+      <option value="Group">Group (one family buys it for everyone)</option>
+      <option value="Each family">Each family brings their own</option></select></label>
+    <div class="two">
+      <label class="f">Store<select class="in" name="store" id="addStore"></select></label>
+      <label class="f">Amount<input class="in" name="qty" placeholder="e.g. 2 rolls"></label>
+    </div>
+    <label class="f">Note<input class="in" name="notes" placeholder="Optional"></label>
+    <label class="toggle" id="addMineWrap" style="margin:0"><input type="checkbox" name="mine"> I'll buy this</label>
+    <div class="btns"><button type="button" class="cancel" id="addCancel">Cancel</button><button type="submit" class="save">Add to the list</button></div>
+  </form>
+</div>
+
+<script>
+/* ===== Settings ===== */
+// Paste the Web app URL from Apps Script between the quotes.
+const API_URL = "";
+const REFRESH_SECONDS = 30;
+
+/* ===== Colours for each family (new families get one automatically) ===== */
+const COLORS = {Bettoun:"#C2473C", Eber:"#2D6BB0", Karp:"#E07F28", Moshel:"#7B52A6", Nathenson:"#2A9688", Vaskofsky:"#6E8F2F", Zlatapolsky:"#C84F86"};
+const SPARE = ["#8C6A2E","#3F7F9F","#A0522D","#5D6D7E","#B5651D","#4B7F52"];
+
+const STORE_ORDER = ["Costco","HEB","Kosher Butcher","Walmart","Trader Joe's","Target","Amazon","Other"];
+const SKIP = /not (doing|buying) this year|not this year/i;
+
+const api = new URLSearchParams(location.search).get("api") || API_URL;
+const store = {
+  get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } },
+  set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} },
+  del(k){ try { localStorage.removeItem(k); } catch(e){} }
+};
+const state = {
+  data: null, me: null, code: null, tab: "mine", shopStore: "all", onlyOpen: false, editMine: false,
+  queue: Promise.resolve(), pending: 0, lastSync: null
+};
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function colorOf(name){
+  if (!name) return "var(--pine)";
+  if (COLORS[name]) return COLORS[name];
+  const fams = state.data ? state.data.families : [];
+  const i = Math.max(0, fams.indexOf(name));
+  return SPARE[i % SPARE.length];
+}
+function toast(msg, err){
+  const t = $("#toast"); t.textContent = msg; t.classList.toggle("err", !!err); t.classList.add("show");
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), err ? 4200 : 1900);
+}
+const pct = (a,b) => b ? Math.round(a / b * 100) : 0;
+
+/* ===== Talking to the sheet ===== */
+async function getData(){
+  const r = await fetch(api + (api.includes("?") ? "&" : "?") + "t=" + Date.now(), {cache:"no-store"});
+  const j = await r.json(); if (!j.ok) throw new Error(j.error || "Something went wrong.");
+  return j;
+}
+async function post(body){
+  const r = await fetch(api, {method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body: JSON.stringify(body)});
+  const j = await r.json(); if (!j.ok) throw new Error(j.error || "Something went wrong.");
+  return j;
+}
+function setData(j){ state.data = j; state.lastSync = new Date(); }
+
+// Changes go out one at a time, in order. The screen updates right away; the sheet's answer replaces it when the line is clear.
+function send(body, optimistic){
+  if (optimistic) { optimistic(); render(); }
+  state.pending++;
+  state.queue = state.queue.then(async () => {
+    try {
+      const j = await post(Object.assign({family: state.me, code: state.code}, body));
+      if (state.pending === 1) setData(j);
+    } catch (e) {
+      const m = String(e.message || e);
+      if (m.startsWith("CODE:")) { toast(m.slice(5).trim(), true); signOut(true); }
+      else { toast(navigator.onLine === false ? "You're offline. That change didn't save." : m, true); try { setData(await getData()); } catch(_){} }
+    } finally {
+      state.pending--; render();
+    }
+  });
+}
+
+async function refresh(manual){
+  if (!state.me || state.pending) return;
+  try { setData(await getData()); render(); if (manual) toast("Up to date"); }
+  catch (e) { if (manual) toast("Couldn't reach the sheet. Try again in a moment.", true); }
+}
+setInterval(() => { if (document.visibilityState === "visible") refresh(false); }, REFRESH_SECONDS * 1000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(false); });
+
+/* ===== Helpers over the data ===== */
+const items = () => (state.data ? state.data.items : []).filter(x => !SKIP.test(x.qty + " " + x.notes));
+const isFamilyItem = x => x.brings.toLowerCase() === "each family";
+const groupItems = () => items().filter(x => !isFamilyItem(x));
+const familyItems = () => items().filter(isFamilyItem);
+const boughtBy = n => groupItems().filter(x => x.who === n);
+const sectionsOf = xs => [...new Set(xs.map(x => x.section || "Other"))];
+function storesOf(xs){
+  const have = new Set(xs.map(x => x.store));
+  const known = STORE_ORDER.filter(s => have.has(s));
+  const extra = [...have].filter(s => s && s !== "N/A" && !STORE_ORDER.includes(s)).sort();
+  return [...known, ...extra, ...(have.has("") ? [""] : []), ...(have.has("N/A") ? ["N/A"] : [])];
+}
+const storeLabel = s => s === "" ? "Store not set" : s === "N/A" ? "No store needed" : s;
+const find = row => state.data.items.find(x => x.row === row);
+
+/* ===== Screens ===== */
+function renderSign(){
+  const me = state.me, c = colorOf(me);
+  const buys = boughtBy(me), bought = buys.filter(x => x.done).length;
+  const fi = familyItems(), packed = fi.filter(x => x.packed[me]).length;
+  const t = state.lastSync ? state.lastSync.toLocaleTimeString("en-US",{hour:"numeric", minute:"2-digit"}) : "";
+  $("#sign").innerHTML = `
+    <div class="who"><span class="blaze" style="--c:${c}"></span><span>${esc(me)} family</span>
+      <button class="switch" data-signout="1">Switch family</button></div>
+    <h1>${esc(state.data.title || "Thanksgiving Camping")}</h1>
+    <p class="sync">${state.pending ? "Saving…" : "Updated " + t}<button data-refresh="1">Refresh</button></p>
+    <div class="meters" style="--c:${c}">
+      <div class="meter"><span>Bought <b>${bought} of ${buys.length}</b></span><div class="bar"><i style="width:${pct(bought,buys.length)}%"></i></div></div>
+      <div class="meter"><span>Packed <b>${packed} of ${fi.length}</b></span><div class="bar"><i style="width:${pct(packed,fi.length)}%"></i></div></div>
+    </div>`;
+}
+
+function row(x, o){
+  return `<li class="row${o.checked ? " done" : ""}">
+    <button class="tick" role="checkbox" aria-checked="${o.checked}" aria-label="${esc((o.kind === "pack" ? "Packed: " : "Bought: ") + x.item)}" data-kind="${o.kind}" data-row="${x.row}" style="--c:${o.color}">${CHECK}</button>
+    <button class="open" data-edit-row="${x.row}" aria-label="Change amount or note for ${esc(x.item)}"><span class="name">${esc(x.item)}</span>${x.qty ? `<span class="qty">${esc(x.qty)}</span>` : ""}${x.notes ? `<span class="note">${esc(x.notes)}</span>` : ""}</button>
+    <div>${o.side || ""}</div></li>`;
+}
+
+function viewMine(){
+  const me = state.me, c = colorOf(me), buys = boughtBy(me);
+  let h = `<h2 class="sec">You're buying<small>${buys.filter(x => x.done).length} of ${buys.length} bought</small></h2>`;
+  if (!buys.length){
+    h += `<div class="empty">You haven't taken any group items yet. Take a few from the shopping list so nothing gets bought twice.<br><button class="take" data-go="open">See items nobody has taken</button></div>`;
+  } else {
+    h += `<p class="lead">Grouped by store. Tap an item to change the amount or add a note.<button class="textbtn" data-editmine="1">${state.editMine ? "Done" : "Give items back"}</button></p>`;
+    for (const s of storesOf(buys)){
+      const xs = buys.filter(x => x.store === s);
+      h += `<h3 class="grp">${esc(storeLabel(s))}<small>${xs.length}</small></h3><ul class="list">`;
+      h += xs.map(x => row(x, {checked:x.done, color:c, kind:"buy",
+        side: state.editMine ? `<button class="take" data-release="${x.row}">Give back</button>` : ""})).join("");
+      h += `</ul>`;
+    }
+    h += `<button class="solid" data-go="open">Take more items</button>`;
+  }
+  const fi = familyItems();
+  h += `<h2 class="sec">Your family packs<small>${fi.filter(x => x.packed[me]).length} of ${fi.length} packed</small></h2>
+        <p class="lead">Every family brings their own of these.</p>`;
+  for (const sec of sectionsOf(fi)){
+    const xs = fi.filter(x => (x.section || "Other") === sec);
+    h += `<h3 class="grp">${esc(sec)}<small>${xs.length}</small></h3><ul class="list">`;
+    h += xs.map(x => row(x, {checked:!!x.packed[me], color:c, kind:"pack"})).join("");
+    h += `</ul>`;
+  }
+  h += `<button class="solid" data-additem="1">Add an item to the list</button>`;
+  return h;
+}
+
+function viewShop(){
+  const all = groupItems();
+  const pool = state.onlyOpen ? all.filter(x => !x.who) : all;
+  const stores = storesOf(all);
+  if (state.shopStore !== "all" && !stores.includes(state.shopStore)) state.shopStore = "all";
+  const count = s => pool.filter(x => (s === "all" || x.store === s) && !x.done).length;
+  let h = `<h2 class="sec">Group shopping<small>${all.filter(x => x.done).length} of ${all.length} bought</small></h2>
+    <div class="chips" role="group" aria-label="Filter by store">
+      <button class="chip" data-store="all" aria-pressed="${state.shopStore === "all"}">All stores<small>${count("all")}</small></button>
+      ${stores.map(s => `<button class="chip" data-store="${esc(s)}" aria-pressed="${state.shopStore === s}">${esc(storeLabel(s))}<small>${count(s)}</small></button>`).join("")}
+    </div>
+    <label class="toggle"><input type="checkbox" id="onlyOpen" ${state.onlyOpen ? "checked" : ""}> Only items nobody has taken</label>
+    <p class="lead">Tap an item to change the amount or add a note.<button class="textbtn" data-additem="1">Add an item</button></p>`;
+  let any = false;
+  for (const s of (state.shopStore === "all" ? stores : [state.shopStore])){
+    const xs = pool.filter(x => x.store === s); if (!xs.length) continue; any = true;
+    h += `<h3 class="grp">${esc(storeLabel(s))}<small>${xs.length}</small></h3><ul class="list">`;
+    h += xs.map(x => {
+      let side;
+      if (!x.who) side = `<button class="take" data-take="${x.row}">Take it</button>`;
+      else side = `<span class="tag"><span class="blaze sm" style="--c:${colorOf(x.who)}"></span>${x.who === state.me ? "You" : esc(x.who)}</span>`;
+      return row(x, {checked:x.done, color: x.who ? colorOf(x.who) : "var(--pine)", kind:"buy", side});
+    }).join("");
+    h += `</ul>`;
+  }
+  if (!any) h += `<div class="empty">Everything here has someone on it.</div>`;
+  return h;
+}
+
+function ago(iso){
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (isNaN(s)) return "";
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.round(s / 60) + " min ago";
+  if (s < 86400) return Math.round(s / 3600) + " hr ago";
+  return new Date(iso).toLocaleDateString("en-US",{month:"short", day:"numeric"});
+}
+function viewFams(){
+  const d = state.data, t = d.trip || {};
+  const open = groupItems().filter(x => !x.who).length, fi = familyItems().length;
+  const meals = ["Breakfast","Lunch","Dinner"].filter(k => t[k]);
+  let h = `<div class="trip"><p>${t.Adults ? `<b>${esc(t.Adults)} adults</b> and ` : ""}${t.Kids ? `<b>${esc(t.Kids)} kids</b> across ` : ""}${d.families.length} families.</p>
+    ${meals.length ? `<dl>${meals.map(k => `<dt>${k}</dt><dd>${esc(t[k])}</dd>`).join("")}</dl>` : ""}</div>`;
+  if (open) h += `<div class="callout"><p><b>${open} group items</b> don't have anyone buying them yet.</p><button class="take" data-go="open">See them</button></div>`;
+  h += `<h2 class="sec">Families</h2><ul class="list">`;
+  for (const f of d.families){
+    const buys = boughtBy(f), b = buys.filter(x => x.done).length;
+    const p = familyItems().filter(x => x.packed[f]).length, c = colorOf(f);
+    h += `<li class="fam"><span class="blaze" style="--c:${c}"></span><div>
+      <h4>${esc(f)}${f === state.me ? "<small>You</small>" : ""}</h4>
+      <p>${buys.length ? `Buying ${buys.length} items, ${b} bought so far` : "Hasn't taken any group items yet"}</p>
+      <div class="bar" style="--c:${c}"><i style="width:${pct(p, fi)}%"></i></div>
+      <p style="margin:5px 0 0">Packed ${p} of ${fi}</p></div></li>`;
+  }
+  h += `</ul>`;
+  if (d.log && d.log.length){
+    h += `<h2 class="sec">Recent changes</h2><div class="log">` + d.log.map(l =>
+      `<p><span class="blaze sm" style="--c:${colorOf(l.family)}"></span><span>${esc(l.family)}: ${esc(l.what.toLowerCase())}${l.item ? ` <b>${esc(l.item)}</b>` : ""} <time>${ago(l.when)}</time></span></p>`).join("") + `</div>`;
+  }
+  return h;
+}
+
+function niceDate(d){
+  const dt = new Date(String(d).slice(0,10) + "T12:00:00");
+  if (isNaN(dt)) return {dow:"", day:esc(d), mon:""};
+  return {dow: dt.toLocaleDateString("en-US",{weekday:"short"}), day: dt.getDate(), mon: dt.toLocaleDateString("en-US",{month:"short"})};
+}
+function niceTime(t){
+  const m = /^(\d{1,2}):(\d{2})/.exec(t || ""); if (!m) return "";
+  const H = +m[1]; return `${((H + 11) % 12) + 1}:${m[2]} ${H < 12 ? "AM" : "PM"}`;
+}
+function viewRem(){
+  const list = [...(state.data.reminders || [])].sort((a,b) => (a.date + a.time).localeCompare(b.date + b.time));
+  let h = `<h2 class="sec">Reminders</h2><p class="lead">Everyone sees the same reminders. Add one to your phone's calendar, or send it on WhatsApp.</p>`;
+  if (!list.length) h += `<div class="empty">No reminders yet. Add the first one below.</div>`;
+  h += `<ul class="list">`;
+  for (const r of list){
+    const d = niceDate(r.date), tm = niceTime(r.time);
+    const forTxt = r.for && r.for !== "Everyone" ? `for the ${esc(r.for)} family` : "for everyone";
+    h += `<li class="rem"><div class="date"><span>${d.dow}</span><b>${d.day}</b><span>${d.mon}</span></div>
+      <div><h4>${esc(r.text)}</h4><p>${tm ? tm + ", " : ""}${forTxt}${r.by ? `. Added by ${esc(r.by)}` : ""}</p>
+      <div class="acts"><button data-ics="${esc(r.id)}">Add to calendar</button>
+      <a href="https://wa.me/?text=${encodeURIComponent("Camping reminder: " + r.text + " (" + d.dow + " " + d.mon + " " + d.day + (tm ? ", " + tm : "") + ")")}" target="_blank" rel="noopener">Send on WhatsApp</a>
+      <button data-delrem="${esc(r.id)}">Remove</button></div></div></li>`;
+  }
+  h += `</ul>
+  <form class="card" id="newRem">
+    <h3>New reminder</h3>
+    <label class="f">What to remind<input class="in" name="text" required placeholder="e.g. Buy ice the morning we leave"></label>
+    <div class="two">
+      <label class="f">Date<input class="in" type="date" name="date" required></label>
+      <label class="f">Time<input class="in" type="time" name="time" value="09:00"></label>
+    </div>
+    <label class="f">For<select class="in" name="for"><option>Everyone</option>${state.data.families.map(f => `<option>${esc(f)}</option>`).join("")}</select></label>
+    <button class="solid" style="margin:4px 0 0" type="submit">Add reminder</button>
+  </form>
+  <p class="fine">The app can't buzz your phone by itself. "Add to calendar" puts the reminder in your phone's calendar with an alert.</p>`;
+  return h;
+}
+
+function downloadIcs(r){
+  const stamp = new Date().toISOString().replace(/[-:]/g,"").split(".")[0] + "Z";
+  const start = String(r.date).slice(0,10).replace(/-/g,"") + "T" + (niceTime(r.time) ? r.time.slice(0,5).replace(":","") : "0900") + "00";
+  const clean = s => String(s).replace(/[\\;,]/g," ").replace(/\n/g," ");
+  const body = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Thanksgiving Camping//EN","BEGIN:VEVENT",
+    `UID:camping-${r.id}@reminder`,`DTSTAMP:${stamp}`,`DTSTART:${start}`,`SUMMARY:${clean(r.text)}`,
+    "BEGIN:VALARM","TRIGGER:PT0M","ACTION:DISPLAY",`DESCRIPTION:${clean(r.text)}`,"END:VALARM","END:VEVENT","END:VCALENDAR"].join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([body], {type:"text/calendar"}));
+  a.download = "camping-reminder.ics"; document.body.appendChild(a); a.click(); a.remove();
+}
+
+function render(){
+  if (!state.me || !state.data) return;
+  renderSign();
+  const scrollY = window.scrollY;
+  $("#view").innerHTML = ({mine:viewMine, shop:viewShop, fams:viewFams, rem:viewRem})[state.tab]();
+  window.scrollTo(0, scrollY);
+  document.querySelector("nav.tabs").hidden = false;
+  document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-current", b.dataset.tab === state.tab ? "page" : "false"));
+  const oo = $("#onlyOpen"); if (oo) oo.onchange = e => { state.onlyOpen = e.target.checked; render(); };
+  const f = $("#newRem"); if (f) {
+    const dateIn = f.querySelector("input[type=date]");
+    if (!dateIn.value) dateIn.value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0,10);
+    f.onsubmit = e => {
+      e.preventDefault(); const d = new FormData(f);
+      send({action:"addReminder", text:d.get("text"), date:d.get("date"), time:d.get("time"), for:d.get("for")});
+      toast("Reminder added"); f.reset();
+    };
+  }
+}
+
+/* ===== Edit amount / note ===== */
+let editing = null;
+function openEdit(rowNum){
+  const x = find(rowNum); if (!x) return;
+  editing = x;
+  $("#editTitle").textContent = x.item;
+  $("#editMeta").textContent = [x.section, x.store ? storeLabel(x.store) : ""].filter(Boolean).join(", ");
+  $("#editQty").value = x.qty; $("#editNotes").value = x.notes;
+  $("#editBg").classList.add("open"); $("#editQty").focus();
+}
+function closeEdit(){ $("#editBg").classList.remove("open"); editing = null; }
+$("#editCancel").onclick = closeEdit;
+$("#editBg").addEventListener("click", e => { if (e.target.id === "editBg") closeEdit(); });
+$("#editForm").onsubmit = e => {
+  e.preventDefault(); if (!editing) return;
+  const x = editing, qty = $("#editQty").value.trim(), notes = $("#editNotes").value.trim();
+  closeEdit();
+  if (qty === x.qty && notes === x.notes) return;
+  send({action:"edit", row:x.row, item:x.item, qty, notes}, () => { x.qty = qty; x.notes = notes; });
+  toast("Saved");
+};
+
+/* ===== Add an item ===== */
+const DEFAULT_SECTIONS = ["Equipment","Food","Supplies","Kids","Extra"];
+const DEFAULT_CATEGORIES = ["Meat","Dairy","Fruit & veg","Basics","Snacks","Condiments","Toys","Cookware"];
+const uniq = a => [...new Set(a.filter(Boolean))];
+function openAdd(){
+  const all = state.data.items;
+  const secs = uniq([...all.map(x => x.section), ...DEFAULT_SECTIONS]);
+  const cats = uniq([...DEFAULT_CATEGORIES, ...all.map(x => x.category)]);
+  const stores = uniq([...STORE_ORDER, ...all.map(x => x.store).filter(s => s && s !== "N/A")]);
+  const f = $("#addForm"); f.reset();
+  $("#addSection").innerHTML = secs.map(s => `<option${s === "Supplies" ? " selected" : ""}>${esc(s)}</option>`).join("");
+  $("#addCategory").innerHTML = `<option value="">None</option>` + cats.map(s => `<option>${esc(s)}</option>`).join("");
+  $("#addStore").innerHTML = `<option value="">Not sure yet</option>` + stores.map(s => `<option>${esc(s)}</option>`).join("") + `<option value="N/A">No store needed</option>`;
+  $("#addMineWrap").style.display = "";
+  $("#addBg").classList.add("open"); f.querySelector("input[name=item]").focus();
+}
+function closeAdd(){ $("#addBg").classList.remove("open"); }
+$("#addCancel").onclick = closeAdd;
+$("#addBg").addEventListener("click", e => { if (e.target.id === "addBg") closeAdd(); });
+$("#addBrings").onchange = e => { $("#addMineWrap").style.display = e.target.value === "Each family" ? "none" : ""; };
+$("#addForm").onsubmit = e => {
+  e.preventDefault();
+  const d = new FormData(e.target);
+  const it = {action:"addItem", item:String(d.get("item")).trim(), section:d.get("section"), category:d.get("category"),
+    brings:d.get("brings"), store:d.get("store"), qty:String(d.get("qty") || "").trim(), notes:String(d.get("notes") || "").trim(), mine: !!d.get("mine")};
+  if (!it.item) return;
+  closeAdd();
+  send(it, () => {
+    state.data.items.push({row: -Date.now(), item: it.item, section: it.section, category: it.category, brings: it.brings,
+      store: it.store, qty: it.qty, notes: it.notes, cost: "", who: it.mine && it.brings !== "Each family" ? state.me : "", done: false, packed: {}});
+  });
+  toast(`Added ${it.item}`);
+};
+
+/* ===== Taps ===== */
+document.addEventListener("click", e => {
+  const t = e.target.closest("button, a"); if (!t || !state.me) return;
+  if (t.matches("nav.tabs button")){ state.tab = t.dataset.tab; render(); window.scrollTo({top:0}); return; }
+  const rowNum = +(t.dataset.row || t.dataset.take || t.dataset.release || t.dataset.editRow || 0);
+  const x = rowNum ? find(rowNum) : null;
+  if (t.dataset.kind && x){
+    if (t.dataset.kind === "pack"){ const v = !x.packed[state.me]; send({action:"pack", row:x.row, item:x.item, value:v}, () => { if (v) x.packed[state.me] = true; else delete x.packed[state.me]; }); }
+    else { const v = !x.done; send({action:"done", row:x.row, item:x.item, value:v}, () => { x.done = v; }); }
+    return;
+  }
+  if (t.dataset.editRow && x){ openEdit(x.row); return; }
+  if (t.dataset.take && x){ send({action:"take", row:x.row, item:x.item}, () => { x.who = state.me; }); toast("Added to your list"); return; }
+  if (t.dataset.release && x){ send({action:"release", row:x.row, item:x.item}, () => { x.who = ""; }); toast("Given back. Someone else can take it."); return; }
+  if (t.dataset.store !== undefined && t.classList.contains("chip")){ state.shopStore = t.dataset.store; render(); return; }
+  if (t.dataset.editmine){ state.editMine = !state.editMine; render(); return; }
+  if (t.dataset.additem){ openAdd(); return; }
+  if (t.dataset.go === "open"){ state.tab = "shop"; state.shopStore = "all"; state.onlyOpen = true; render(); window.scrollTo({top:0}); return; }
+  if (t.dataset.ics){ const r = state.data.reminders.find(r => String(r.id) === t.dataset.ics); if (r){ downloadIcs(r); toast("Calendar file downloaded"); } return; }
+  if (t.dataset.delrem){ const id = t.dataset.delrem; send({action:"deleteReminder", id}, () => { state.data.reminders = state.data.reminders.filter(r => String(r.id) !== id); }); toast("Reminder removed"); return; }
+  if (t.dataset.refresh){ refresh(true); return; }
+  if (t.dataset.signout){ signOut(false); return; }
+});
+
+/* ===== Family + code ===== */
+let picked = null;
+function showPicker(){
+  $("#loadScreen").classList.remove("open");
+  $("#pickList").innerHTML = state.data.families.map(f => `<button class="fbtn" data-pick="${esc(f)}"><span class="blaze" style="--c:${colorOf(f)}"></span>${esc(f)}</button>`).join("");
+  $("#codeScreen").classList.remove("open");
+  $("#pickScreen").classList.add("open");
+}
+$("#pickList").addEventListener("click", e => {
+  const b = e.target.closest("[data-pick]"); if (!b) return;
+  picked = b.dataset.pick;
+  $("#chosen").innerHTML = `<span class="blaze" style="--c:${colorOf(picked)};height:30px;width:12px"></span>${esc(picked)}`;
+  $("#codeMsg").textContent = ""; $("#codeInput").value = "";
+  $("#pickScreen").classList.remove("open"); $("#codeScreen").classList.add("open");
+  setTimeout(() => $("#codeInput").focus(), 50);
+});
+$("#codeBack").onclick = showPicker;
+$("#codeForm").onsubmit = async e => {
+  e.preventDefault();
+  const code = $("#codeInput").value.trim(); if (!code) return;
+  $("#codeGo").disabled = true; $("#codeGo").textContent = "Checking…"; $("#codeMsg").textContent = "";
+  try {
+    const j = await post({action:"login", family:picked, code});
+    setData(j); state.me = picked; state.code = code;
+    store.set("camping-login", {family:picked, code});
+    $("#codeScreen").classList.remove("open"); state.tab = "mine"; render(); window.scrollTo({top:0});
+  } catch (err) {
+    $("#codeMsg").textContent = String(err.message || err).replace(/^CODE:\s*/, "");
+  } finally { $("#codeGo").disabled = false; $("#codeGo").textContent = "Go in"; }
+};
+function signOut(keepFamily){
+  const fam = state.me;
+  store.del("camping-login"); state.me = null; state.code = null;
+  document.querySelector("nav.tabs").hidden = true; $("#sign").innerHTML = ""; $("#view").innerHTML = "";
+  if (keepFamily && fam){ picked = fam; $("#chosen").innerHTML = `<span class="blaze" style="--c:${colorOf(fam)};height:30px;width:12px"></span>${esc(fam)}`; $("#codeInput").value = ""; $("#codeMsg").textContent = "Your family code changed. Enter the new one."; $("#codeScreen").classList.add("open"); }
+  else showPicker();
+}
+
+/* ===== Start ===== */
+async function start(){
+  if (!api){ $("#loadMsg").textContent = "This app isn't connected to the sheet yet."; return; }
+  const saved = store.get("camping-login");
+  try {
+    if (saved && saved.family && saved.code){
+      try {
+        const j = await post({action:"login", family:saved.family, code:saved.code});
+        setData(j); state.me = saved.family; state.code = saved.code;
+        $("#loadScreen").classList.remove("open"); render(); return;
+      } catch (e) {
+        if (!/code/i.test(String(e.message))) throw e;
+        store.del("camping-login"); setData(await getData());
+        picked = saved.family; $("#loadScreen").classList.remove("open");
+        $("#chosen").innerHTML = `<span class="blaze" style="--c:${colorOf(picked)};height:30px;width:12px"></span>${esc(picked)}`;
+        $("#codeMsg").textContent = "Your family code changed. Enter the new one."; $("#codeScreen").classList.add("open"); return;
+      }
+    }
+    setData(await getData()); showPicker();
+  } catch (e) {
+    $("#loadMsg").textContent = "Couldn't reach the sheet. Check your connection and try again.";
+    $("#loadAct").innerHTML = `<button class="fbtn" style="justify-content:center" onclick="location.reload()">Try again</button>`;
+  }
+}
+start();
+</script>
+</body>
+</html>
