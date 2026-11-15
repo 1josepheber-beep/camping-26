@@ -75,6 +75,10 @@
   .tag{display:inline-flex;align-items:center;gap:6px;font-size:14px;color:var(--pine-2);white-space:nowrap}
   .take{background:#fff;border:1.5px solid var(--pine);border-radius:6px;padding:4px 12px;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:16px;color:var(--pine);white-space:nowrap}
   .take:active{background:var(--lichen)}
+  .actionrow{display:flex;gap:10px;margin:18px 18px 0}
+  .actionrow button{flex:1 1 0;min-width:0;margin:0;min-height:48px;display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:8px;padding:10px 12px;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:18px;white-space:nowrap}
+  .actionrow .outline{background:#fff;border:1.5px solid var(--pine);color:var(--pine)}
+  .actionrow .outline svg{width:16px;height:16px;flex:none}
   .solid{display:inline-block;margin:14px 18px 0;background:var(--pine);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:18px}
   .empty{margin:12px 18px 4px;padding:14px 16px;background:#fff;border:1.5px dashed #B7C4B6;border-radius:8px;color:var(--stone);font-size:15px}
   .empty button{margin-top:10px}
@@ -311,6 +315,7 @@ const state = {
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const PENCIL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>';
+const PLUS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>';
 const CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 function colorOf(name){
   if (!name) return "var(--pine)";
@@ -544,7 +549,7 @@ function viewMine(){
   if (view === "shop"){
     h += `<h2 class="sec">Your shopping list</h2><p class="lead">What your family is buying for the group, by store. Tap Edit to change the amount, cost or note.</p>`;
     if (!buys.length){
-      h += `<div class="empty">You haven't taken any group items yet. Take a few from Shopping so nothing gets bought twice.<br><button class="take" data-go="open">See items nobody has taken</button></div>`;
+      h += `<div class="empty">You haven't taken any group items yet. Tap "Take more items" below so nothing gets bought twice.</div>`;
     } else {
       h += `<p class="lead"><button class="textbtn" style="margin:0" data-editmine="1">${state.editMine ? "Done giving back" : "Give items back"}</button></p>`;
       for (const st of storesOf(buys)){
@@ -554,7 +559,6 @@ function viewMine(){
           side: state.editMine ? `<button class="take" data-release="${x.row}">Give back</button>` : ""})).join("");
         h += `</ul>`;
       }
-      h += `<button class="solid" data-go="open">Take more items</button>`;
     }
   } else {
     const sk = skipped(me);
@@ -575,7 +579,8 @@ function viewMine(){
       h += `</ul></details>`;
     }
   }
-  h += `<button class="solid" data-additem="1">Add an item to the list</button>`;
+  // Buttons sit side by side under the list.
+  h += `<div class="actionrow">${view === "shop" ? `<button class="solid" data-go="open">Take more items</button>` : ""}<button class="outline" data-additem="1">${PLUS}Add an item</button></div>`;
   return h;
 }
 
