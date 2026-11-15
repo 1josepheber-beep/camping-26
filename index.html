@@ -105,7 +105,11 @@
   .fam h4 small{margin-left:auto;font-family:"Barlow",sans-serif;font-weight:500;font-size:13px;color:var(--stone)}
   .fam p{margin:2px 0 8px;font-size:14.5px;color:var(--stone)}
   .fam .bar{height:6px;background:#DDE4D8}
-  .log{padding:8px 18px 4px}
+  .logtoggle{display:flex;align-items:center;justify-content:space-between;width:100%;margin:18px 0 0;padding:15px 18px;background:none;border:0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:19px;color:var(--pine);text-align:left}
+  .logtoggle svg{width:18px;height:18px;transition:transform .15s}
+  .logtoggle[aria-expanded="true"] svg{transform:rotate(180deg)}
+  .logfoot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 18px 4px;color:var(--stone);font-size:14px}
+  .log{padding:2px 18px 0}
   .log p{margin:0;padding:8px 0;border-bottom:1px solid var(--rule);font-size:14.5px;display:grid;grid-template-columns:7px 1fr;gap:10px;align-items:start}
   .log p .blaze{height:16px;margin-top:3px}
   .log time{color:var(--stone);font-size:13px}
@@ -312,12 +316,13 @@ function clearLogin(){ store.del(LOGIN_KEY); store.del(DATA_KEY); try { document
 const state = {
   data: null, me: null, code: null, tab: "mine", shopStore: "all", onlyOpen: false, editMine: false,
   outbox: [], inflight: null, saveState: "idle", changeSeq: 0, autoT: null, flushAgain: false, onOk: {},
-  lastSync: null, mineView: null, openSkip: false
+  lastSync: null, mineView: null, openSkip: false, logOpen: false, logShown: 5
 };
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const PENCIL = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>';
+const CHEVRON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const PLUS = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>';
 const CHECK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.2 4.2L19 7" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 function colorOf(name){
@@ -642,9 +647,16 @@ function viewFams(){
       <p style="margin:5px 0 0">Packed ${p} of ${fl.length}</p></div></li>`;
   }
   h += `</ul>`;
+  // Recent changes stay closed until someone taps to see them, then show 5 at a time.
   if (d.log && d.log.length){
-    h += `<h2 class="sec">Recent changes</h2><div class="log">` + d.log.map(l =>
-      `<p><span class="blaze sm" style="--c:${colorOf(l.family)}"></span><span>${esc(l.family)}: ${esc(l.what.toLowerCase())}${l.item ? ` <b>${esc(l.item)}</b>` : ""} <time>${ago(l.when)}</time></span></p>`).join("") + `</div>`;
+    h += `<button class="logtoggle" data-logtoggle="1" aria-expanded="${state.logOpen}" aria-controls="logList">
+      <span>${state.logOpen ? "Hide recent changes" : "View recent changes"}</span>${CHEVRON}</button>`;
+    if (state.logOpen){
+      const shown = d.log.slice(0, state.logShown);
+      h += `<div class="log" id="logList">` + shown.map(l =>
+        `<p><span class="blaze sm" style="--c:${colorOf(l.family)}"></span><span>${esc(l.family)}: ${esc(l.what.toLowerCase())}${l.item ? ` <b>${esc(l.item)}</b>` : ""} <time>${ago(l.when)}</time></span></p>`).join("") + `</div>`;
+      h += `<div class="logfoot"><span>Showing ${shown.length} of ${d.log.length}</span>${d.log.length > shown.length ? `<button class="take" data-logmore="1">Show more</button>` : ""}</div>`;
+    }
   }
   return h;
 }
@@ -878,6 +890,8 @@ document.addEventListener("click", e => {
     toast(`${sx.item} is back on your list`); return;
   }
   if (t.dataset.additem){ openAdd(); return; }
+  if (t.dataset.logtoggle){ state.logOpen = !state.logOpen; state.logShown = 5; render(); return; }
+  if (t.dataset.logmore){ state.logShown += 5; render(); return; }
   if (t.dataset.go === "open"){ state.shopStore = "all"; state.onlyOpen = true; goTab("shop"); return; }
   if (t.dataset.ics){ const r = state.data.reminders.find(r => String(r.id) === t.dataset.ics); if (r){ downloadIcs(r); toast("Calendar file downloaded"); } return; }
   if (t.dataset.delrem){ send({action:"deleteReminder", id: t.dataset.delrem}, {now: true}); toast("Reminder removed"); return; }

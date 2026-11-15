@@ -143,7 +143,7 @@ function readAll_() {
     trip: trip,
     reminders: readReminders_(),
     notNeeded: readNotNeeded_(),
-    log: readLog_(20),
+    log: readLog_(200),
     updated: new Date().toISOString()
   };
 }
