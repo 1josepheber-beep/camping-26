@@ -9,9 +9,10 @@
  *   (✓, Who, Section, Category, Brings, Store, Item, Qty, Cost, Notes). Every other header
  *   in that row is treated as a family checkbox column.
  * - Lets the app tick items, take / give back items, add items, and change Qty, Notes and Cost.
- * - Keeps family codes on a hidden tab called "App codes" (Family | Code).
+ * - Keeps family codes on a tab called "App codes" (Family | Code).
  *   Change a family's code there any time. Default code is the last name followed by #.
  * - Keeps shared reminders on a tab called "App reminders" and a history of changes on "App log".
+ * - Remembers which packing items a family doesn't need, on "App not needed" (Family | Item).
  * - Emails a reminder to the person who set it, at the date and time they chose (Houston time).
  *   Turn this on once by running setupEmailReminders from the editor.
  */
@@ -20,6 +21,7 @@ var LIST_TAB = 'Thanksgiving 26 List';
 var CODES_TAB = 'App codes';
 var REMINDERS_TAB = 'App reminders';
 var LOG_TAB = 'App log';
+var NOT_NEEDED_TAB = 'App not needed';
 var FIXED_HEADERS = ['✓', 'Who', 'Section', 'Category', 'Brings', 'Store', 'Item', 'Qty', 'Cost', 'Notes'];
 
 function doGet(e) {
@@ -129,6 +131,7 @@ function readAll_() {
     items: items,
     trip: trip,
     reminders: readReminders_(),
+    notNeeded: readNotNeeded_(),
     log: readLog_(20),
     updated: new Date().toISOString()
   };
@@ -139,9 +142,8 @@ function readAll_() {
 function codesSheet_(families) {
   var sh = ss_().getSheetByName(CODES_TAB);
   if (!sh) {
-    sh = ss_().insertSheet(CODES_TAB);
+    sh = ss_().insertSheet(CODES_TAB, ss_().getSheets().length);
     sh.getRange(1, 1, 1, 2).setValues([['Family', 'Code']]);
-    try { sh.hideSheet(); } catch (e) {}
   }
   var have = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 1).getDisplayValues().map(function (r) { return String(r[0]).trim(); }) : [];
   (families || []).forEach(function (f) {
@@ -164,6 +166,41 @@ function codeOk_(family, code) {
   return false;
 }
 
+/* ---------- items a family doesn't need ---------- */
+
+function notNeededSheet_() {
+  var sh = ss_().getSheetByName(NOT_NEEDED_TAB);
+  if (!sh) {
+    sh = ss_().insertSheet(NOT_NEEDED_TAB, ss_().getSheets().length);
+    sh.getRange(1, 1, 1, 3).setValues([['Family', 'Item', 'When']]);
+  }
+  return sh;
+}
+
+function readNotNeeded_() {
+  var sh = ss_().getSheetByName(NOT_NEEDED_TAB);
+  var out = {};
+  if (!sh || sh.getLastRow() < 2) return out;
+  sh.getRange(2, 1, sh.getLastRow() - 1, 2).getDisplayValues().forEach(function (r) {
+    var f = String(r[0]).trim(), it = String(r[1]).trim();
+    if (!f || !it) return;
+    (out[f] = out[f] || []).push(it);
+  });
+  return out;
+}
+
+function setNotNeeded_(family, item, on) {
+  var sh = notNeededSheet_();
+  var rows = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 2).getDisplayValues() : [];
+  for (var i = rows.length - 1; i >= 0; i--) {
+    if (String(rows[i][0]).trim() === family && String(rows[i][1]).trim() === item) {
+      if (on) return; // already there
+      sh.deleteRow(i + 2);
+    }
+  }
+  if (on) sh.appendRow([family, item, new Date()]);
+}
+
 /* ---------- reminders + log ---------- */
 
 var REMINDER_HEADERS = ['Id', 'Date', 'Time', 'Reminder', 'For', 'Added by', 'Email to', 'Email status'];
@@ -172,7 +209,7 @@ var APP_LINK = 'https://1josepheber-beep.github.io/camping-26/';
 
 function remindersSheet_() {
   var sh = ss_().getSheetByName(REMINDERS_TAB);
-  if (!sh) sh = ss_().insertSheet(REMINDERS_TAB);
+  if (!sh) sh = ss_().insertSheet(REMINDERS_TAB, ss_().getSheets().length);
   var head = sh.getRange(1, 1, 1, REMINDER_HEADERS.length).getDisplayValues()[0];
   if (head.join('|') !== REMINDER_HEADERS.join('|')) sh.getRange(1, 1, 1, REMINDER_HEADERS.length).setValues([REMINDER_HEADERS]);
   return sh;
@@ -267,7 +304,7 @@ function setupEmailReminders() {
 function log_(family, what, item) {
   var sh = ss_().getSheetByName(LOG_TAB);
   if (!sh) {
-    sh = ss_().insertSheet(LOG_TAB);
+    sh = ss_().insertSheet(LOG_TAB, ss_().getSheets().length);
     sh.getRange(1, 1, 1, 4).setValues([['When', 'Family', 'What', 'Item']]);
   }
   sh.appendRow([new Date(), family, what, item || '']);
@@ -385,6 +422,13 @@ function apply_(b) {
     put('Notes', String(b.notes || '').trim());
     if (b.mine && String(b.brings || 'Group').trim() !== 'Each family') put('Who', family);
     log_(family, 'Added', item);
+    return {};
+  }
+
+  if (b.action === 'notNeeded') {
+    findRow_(sh, L, Number(b.row), item); // make sure it's still on the list
+    setNotNeeded_(family, item, !!b.value);
+    log_(family, b.value ? "Doesn't need" : 'Needs after all', item);
     return {};
   }
 

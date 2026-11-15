@@ -46,6 +46,16 @@
   ul.list{list-style:none;margin:0;padding:0}
   .row{display:grid;grid-template-columns:30px 1fr auto;gap:12px;align-items:center;padding:11px 18px;border-bottom:1px solid var(--rule);background:var(--birch)}
   .side{display:flex;align-items:center;gap:8px;justify-content:flex-end}
+  .seg{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:16px 18px 0;padding:5px;background:#E1E8DC;border-radius:12px}
+  .seg button{border:0;border-radius:8px;background:transparent;padding:10px 6px;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:19px;color:var(--pine-2);line-height:1.1}
+  .seg button small{display:block;font-family:"Barlow",sans-serif;font-weight:500;font-size:13px;color:var(--stone);margin-top:2px}
+  .seg button[aria-pressed="true"]{background:#fff;box-shadow:0 1px 0 rgba(29,58,44,.12),0 0 0 1.5px var(--pine);color:var(--pine)}
+  .nn{display:inline-flex;align-items:center;background:#fff;border:1.5px dashed #9EAEA2;border-radius:6px;padding:4px 8px;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:15px;color:var(--stone);white-space:nowrap}
+  details.skip{margin:18px 0 0;border-top:1px solid var(--rule)}
+  details.skip summary{cursor:pointer;padding:14px 18px;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:18px;color:var(--stone)}
+  .row.off{background:#EEF1EC}
+  .row.off .name{color:#8A978E}
+  .row.off .tick{visibility:hidden}
   .editbtn{display:inline-flex;align-items:center;gap:4px;background:#fff;border:1.5px solid #B9C6B8;border-radius:6px;padding:4px 9px;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:15.5px;color:var(--pine-2);white-space:nowrap}
   .editbtn svg{width:14px;height:14px}
   .editbtn:active{background:var(--lichen)}
@@ -270,7 +280,7 @@ function loadLogin(){ const a = store.get(LOGIN_KEY); return (a && a.family && a
 function clearLogin(){ store.del(LOGIN_KEY); store.del(DATA_KEY); try { document.cookie = "camping_login=; max-age=0; path=/"; } catch(e){} }
 const state = {
   data: null, me: null, code: null, tab: "mine", shopStore: "all", onlyOpen: false, editMine: false,
-  queue: Promise.resolve(), pending: 0, lastSync: null
+  queue: Promise.resolve(), pending: 0, lastSync: null, mineView: null, openSkip: false
 };
 
 const $ = s => document.querySelector(s);
@@ -354,6 +364,8 @@ const items = () => (state.data ? state.data.items : []).filter(x => !SKIP.test(
 const isFamilyItem = x => x.brings.toLowerCase() === "each family";
 const groupItems = () => items().filter(x => !isFamilyItem(x));
 const familyItems = () => items().filter(isFamilyItem);
+const skipped = fam => new Set(((state.data && state.data.notNeeded) || {})[fam] || []);
+const packList = fam => { const sk = skipped(fam); return familyItems().filter(x => !sk.has(x.item)); };
 const boughtBy = n => groupItems().filter(x => x.who === n);
 const sectionsOf = xs => [...new Set(xs.map(x => x.section || "Other"))];
 function storesOf(xs){
@@ -369,7 +381,7 @@ const find = row => state.data.items.find(x => x.row === row);
 function renderSign(){
   const me = state.me, c = colorOf(me);
   const buys = boughtBy(me), bought = buys.filter(x => x.done).length;
-  const fi = familyItems(), packed = fi.filter(x => x.packed[me]).length;
+  const fi = packList(me), packed = fi.filter(x => x.packed[me]).length;
   const t = state.lastSync ? state.lastSync.toLocaleTimeString("en-US",{hour:"numeric", minute:"2-digit"}) : "";
   $("#sign").innerHTML = `
     <div class="who"><span class="blaze" style="--c:${c}"></span><span>${esc(me)} family</span>
@@ -390,29 +402,45 @@ function row(x, o){
 }
 
 function viewMine(){
-  const me = state.me, c = colorOf(me), buys = boughtBy(me);
-  let h = `<h2 class="sec">You're buying<small>${buys.filter(x => x.done).length} of ${buys.length} bought</small></h2>`;
-  if (!buys.length){
-    h += `<div class="empty">You haven't taken any group items yet. Take a few from the shopping list so nothing gets bought twice.<br><button class="take" data-go="open">See items nobody has taken</button></div>`;
+  const me = state.me, c = colorOf(me), buys = boughtBy(me), pl = packList(me);
+  const view = state.mineView === "pack" ? "pack" : "shop";
+  let h = `<div class="seg" role="group" aria-label="Your lists">
+    <button data-mineview="shop" aria-pressed="${view === "shop"}">Shopping list<small>${buys.filter(x => x.done).length} of ${buys.length} bought</small></button>
+    <button data-mineview="pack" aria-pressed="${view === "pack"}">Packing list<small>${pl.filter(x => x.packed[me]).length} of ${pl.length} packed</small></button>
+  </div>`;
+  if (view === "shop"){
+    h += `<h2 class="sec">Your shopping list</h2><p class="lead">What your family is buying for the group, by store. Tap Edit to change the amount, cost or note.</p>`;
+    if (!buys.length){
+      h += `<div class="empty">You haven't taken any group items yet. Take a few from Shopping so nothing gets bought twice.<br><button class="take" data-go="open">See items nobody has taken</button></div>`;
+    } else {
+      h += `<p class="lead"><button class="textbtn" style="margin:0" data-editmine="1">${state.editMine ? "Done giving back" : "Give items back"}</button></p>`;
+      for (const st of storesOf(buys)){
+        const xs = buys.filter(x => x.store === st);
+        h += `<h3 class="grp">${esc(storeLabel(st))}<small>${xs.length}</small></h3><ul class="list">`;
+        h += xs.map(x => row(x, {checked:x.done, color:c, kind:"buy",
+          side: state.editMine ? `<button class="take" data-release="${x.row}">Give back</button>` : ""})).join("");
+        h += `</ul>`;
+      }
+      h += `<button class="solid" data-go="open">Take more items</button>`;
+    }
   } else {
-    h += `<p class="lead">Grouped by store. Tap Edit to change the amount, cost or note.<button class="textbtn" data-editmine="1">${state.editMine ? "Done" : "Give items back"}</button></p>`;
-    for (const s of storesOf(buys)){
-      const xs = buys.filter(x => x.store === s);
-      h += `<h3 class="grp">${esc(storeLabel(s))}<small>${xs.length}</small></h3><ul class="list">`;
-      h += xs.map(x => row(x, {checked:x.done, color:c, kind:"buy",
-        side: state.editMine ? `<button class="take" data-release="${x.row}">Give back</button>` : ""})).join("");
+    const sk = skipped(me);
+    const off = familyItems().filter(x => sk.has(x.item));
+    h += `<h2 class="sec">Your packing list</h2><p class="lead">What your family brings from home. Tap "Don't need" to take something off your list. Other families still see it.</p>`;
+    for (const sec of sectionsOf(pl)){
+      const xs = pl.filter(x => (x.section || "Other") === sec);
+      h += `<h3 class="grp">${esc(sec)}<small>${xs.length}</small></h3><ul class="list">`;
+      h += xs.map(x => row(x, {checked:!!x.packed[me], color:c, kind:"pack",
+        side: `<button class="nn" data-skip="${x.row}" aria-label="Don't need ${esc(x.item)}">Don't need</button>`})).join("");
       h += `</ul>`;
     }
-    h += `<button class="solid" data-go="open">Take more items</button>`;
-  }
-  const fi = familyItems();
-  h += `<h2 class="sec">Your family packs<small>${fi.filter(x => x.packed[me]).length} of ${fi.length} packed</small></h2>
-        <p class="lead">Every family brings their own of these.</p>`;
-  for (const sec of sectionsOf(fi)){
-    const xs = fi.filter(x => (x.section || "Other") === sec);
-    h += `<h3 class="grp">${esc(sec)}<small>${xs.length}</small></h3><ul class="list">`;
-    h += xs.map(x => row(x, {checked:!!x.packed[me], color:c, kind:"pack"})).join("");
-    h += `</ul>`;
+    if (!pl.length) h += `<div class="empty">Nothing left on your packing list.</div>`;
+    if (off.length){
+      h += `<details class="skip"${state.openSkip ? " open" : ""}><summary>You don't need these (${off.length})</summary><ul class="list">`;
+      h += off.map(x => `<li class="row off"><span class="tick" aria-hidden="true"></span><div><span class="name">${esc(x.item)}</span></div>
+        <div class="side"><button class="take" data-unskip="${x.row}">Need it after all</button></div></li>`).join("");
+      h += `</ul></details>`;
+    }
   }
   h += `<button class="solid" data-additem="1">Add an item to the list</button>`;
   return h;
@@ -457,7 +485,7 @@ function ago(iso){
 }
 function viewFams(){
   const d = state.data, t = d.trip || {};
-  const open = groupItems().filter(x => !x.who).length, fi = familyItems().length;
+  const open = groupItems().filter(x => !x.who).length;
   const meals = ["Breakfast","Lunch","Dinner"].filter(k => t[k]);
   let h = `<div class="trip"><p>${t.Adults ? `<b>${esc(t.Adults)} adults</b> and ` : ""}${t.Kids ? `<b>${esc(t.Kids)} kids</b> across ` : ""}${d.families.length} families.</p>
     ${meals.length ? `<dl>${meals.map(k => `<dt>${k}</dt><dd>${esc(t[k])}</dd>`).join("")}</dl>` : ""}</div>`;
@@ -465,12 +493,12 @@ function viewFams(){
   h += `<h2 class="sec">Families</h2><ul class="list">`;
   for (const f of d.families){
     const buys = boughtBy(f), b = buys.filter(x => x.done).length;
-    const p = familyItems().filter(x => x.packed[f]).length, c = colorOf(f);
+    const fl = packList(f), p = fl.filter(x => x.packed[f]).length, c = colorOf(f);
     h += `<li class="fam"><span class="blaze" style="--c:${c}"></span><div>
       <h4>${esc(f)}${f === state.me ? "<small>You</small>" : ""}</h4>
       <p>${buys.length ? `Buying ${buys.length} items, ${b} bought so far` : "Hasn't taken any group items yet"}</p>
-      <div class="bar" style="--c:${c}"><i style="width:${pct(p, fi)}%"></i></div>
-      <p style="margin:5px 0 0">Packed ${p} of ${fi}</p></div></li>`;
+      <div class="bar" style="--c:${c}"><i style="width:${pct(p, fl.length)}%"></i></div>
+      <p style="margin:5px 0 0">Packed ${p} of ${fl.length}</p></div></li>`;
   }
   h += `</ul>`;
   if (d.log && d.log.length){
@@ -572,6 +600,7 @@ function render(){
   document.querySelector("nav.tabs").hidden = false;
   document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-current", b.dataset.tab === state.tab ? "page" : "false"));
   const oo = $("#onlyOpen"); if (oo) oo.onchange = e => { state.onlyOpen = e.target.checked; render(); };
+  const ds = document.querySelector("details.skip"); if (ds) ds.ontoggle = () => { state.openSkip = ds.open; };
   const f = $("#newRem"); if (f) {
     const dateIn = f.querySelector("input[type=date]");
     if (!dateIn.value) dateIn.value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0,10);
@@ -657,6 +686,7 @@ document.addEventListener("click", e => {
   const t = e.target.closest("button, a"); if (!t || !state.me) return;
   if (t.matches("nav.tabs button")){ goTab(t.dataset.tab); return; }
   const rowNum = +(t.dataset.row || t.dataset.take || t.dataset.release || t.dataset.editRow || 0);
+  if (t.closest("details.skip")) state.openSkip = true;
   const x = rowNum ? find(rowNum) : null;
   if (t.dataset.kind && x){
     if (t.dataset.kind === "pack"){ const v = !x.packed[state.me]; send({action:"pack", row:x.row, item:x.item, value:v}, () => { if (v) x.packed[state.me] = true; else delete x.packed[state.me]; }); }
@@ -668,6 +698,17 @@ document.addEventListener("click", e => {
   if (t.dataset.release && x){ send({action:"release", row:x.row, item:x.item}, () => { x.who = ""; }); toast("Given back. Someone else can take it."); return; }
   if (t.dataset.store !== undefined && t.classList.contains("chip")){ state.shopStore = t.dataset.store; render(); return; }
   if (t.dataset.editmine){ state.editMine = !state.editMine; render(); return; }
+  if (t.dataset.mineview){ state.mineView = t.dataset.mineview; store.set("camping-mineview", state.mineView); render(); return; }
+  if (t.dataset.skip || t.dataset.unskip){
+    const sx = find(+(t.dataset.skip || t.dataset.unskip)); if (!sx) return;
+    const on = !!t.dataset.skip, me = state.me;
+    send({action:"notNeeded", row:sx.row, item:sx.item, value:on}, () => {
+      const nn = state.data.notNeeded = state.data.notNeeded || {};
+      const list = new Set(nn[me] || []); on ? list.add(sx.item) : list.delete(sx.item); nn[me] = [...list];
+    });
+    if (!on) state.openSkip = true;
+    toast(on ? `Took ${sx.item} off your list` : `${sx.item} is back on your list`); return;
+  }
   if (t.dataset.additem){ openAdd(); return; }
   if (t.dataset.go === "open"){ state.shopStore = "all"; state.onlyOpen = true; goTab("shop"); return; }
   if (t.dataset.ics){ const r = state.data.reminders.find(r => String(r.id) === t.dataset.ics); if (r){ downloadIcs(r); toast("Calendar file downloaded"); } return; }
@@ -724,6 +765,7 @@ function askCodeAgain(fam){
   $("#codeInput").value = ""; $("#codeMsg").textContent = "Your family code changed. Enter the new one."; $("#codeScreen").classList.add("open");
 }
 async function start(){
+  state.mineView = store.get("camping-mineview") || "shop";
   if (!api){ $("#loadMsg").textContent = "This app isn't connected to the sheet yet."; return; }
   const h = location.hash.slice(1); state.tab = TABS.includes(h) ? h : "mine";
   try { history.replaceState({tab: state.tab}, "", "#" + state.tab); } catch(e){}
