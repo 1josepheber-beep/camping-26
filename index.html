@@ -248,7 +248,10 @@
   <form class="sheet" id="editForm" role="dialog" aria-modal="true" aria-labelledby="editTitle">
     <h3 id="editTitle"></h3>
     <p class="meta" id="editMeta"></p>
-    <label class="f">Amount<input class="in" name="qty" id="editQty" placeholder="e.g. 12 packs"></label>
+    <div class="two">
+      <label class="f">Amount<input class="in" name="qty" id="editQty" placeholder="e.g. 12 packs"></label>
+      <label class="f">Store<select class="in" name="store" id="editStore"></select></label>
+    </div>
     <label class="f">What it cost ($)<input class="in" name="cost" id="editCost" inputmode="decimal" placeholder="e.g. 24.99"></label>
     <label class="f">Note<textarea class="in" name="notes" id="editNotes" placeholder="Anything people should know"></textarea></label>
     <div class="btns"><button type="button" class="cancel" id="editCancel">Cancel</button><button type="submit" class="save">Save</button></div>
@@ -417,7 +420,7 @@ function applyLocal(b){
     case "take": if (x) x.who = me; break;
     case "release": if (x) x.who = ""; break;
     case "edit": if (x){
-      if ("qty" in b) x.qty = b.qty; if ("notes" in b) x.notes = b.notes;
+      if ("qty" in b) x.qty = b.qty; if ("notes" in b) x.notes = b.notes; if ("store" in b) x.store = b.store;
       if ("cost" in b){ x.costNum = b.cost === "" ? 0 : +b.cost; x.cost = b.cost === "" ? "" : money(+b.cost); }
     } break;
     case "notNeeded": {
@@ -547,7 +550,7 @@ function viewMine(){
     <button data-mineview="pack" aria-pressed="${view === "pack"}">Packing list<small>${pl.filter(x => x.packed[me]).length} of ${pl.length} packed</small></button>
   </div>`;
   if (view === "shop"){
-    h += `<h2 class="sec">Your shopping list</h2><p class="lead">What your family is buying for the group, by store. Tap Edit to change the amount, cost or note.</p>`;
+    h += `<h2 class="sec">Your shopping list</h2><p class="lead">What your family is buying for the group, by store. Tap Edit to change the amount, store, cost or note.</p>`;
     if (!buys.length){
       h += `<div class="empty">You haven't taken any group items yet. Tap "Take more items" below so nothing gets bought twice.</div>`;
     } else {
@@ -596,7 +599,7 @@ function viewShop(){
       ${stores.map(s => `<button class="chip" data-store="${esc(s)}" aria-pressed="${state.shopStore === s}">${esc(storeLabel(s))}<small>${count(s)}</small></button>`).join("")}
     </div>
     <label class="toggle"><input type="checkbox" id="onlyOpen" ${state.onlyOpen ? "checked" : ""}> Only items nobody has taken</label>
-    <p class="lead">Tap Edit to change the amount, cost or note.<button class="textbtn" data-additem="1">Add an item</button></p>`;
+    <p class="lead">Tap Edit to change the amount, store, cost or note.<button class="textbtn" data-additem="1">Add an item</button></p>`;
   let any = false;
   for (const s of (state.shopStore === "all" ? stores : [state.shopStore])){
     const xs = pool.filter(x => x.store === s); if (!xs.length) continue; any = true;
@@ -769,6 +772,7 @@ function openEdit(rowNum){
   $("#editTitle").textContent = x.item;
   $("#editMeta").textContent = [x.section, x.store ? storeLabel(x.store) : ""].filter(Boolean).join(", ");
   $("#editQty").value = x.qty; $("#editNotes").value = x.notes;
+  $("#editStore").innerHTML = storeOptions(x.store); $("#editStore").value = x.store || "";
   $("#editCost").value = x.costNum > 0 ? x.costNum.toFixed(2) : "";
   $("#editCost").closest("label").style.display = isFamilyItem(x) ? "none" : "";
   $("#editBg").classList.add("open"); pushSheet(); $("#editQty").focus();
@@ -783,10 +787,12 @@ $("#editForm").onsubmit = e => {
   const oldCost = x.costNum > 0 ? x.costNum.toFixed(2) : "";
   const newCost = costIn === "" ? "" : (isNaN(parseFloat(costIn)) ? oldCost : parseFloat(costIn).toFixed(2));
   const costChanged = !isFamilyItem(x) && newCost !== oldCost;
+  const storeIn = $("#editStore").value, storeChanged = storeIn !== (x.store || "");
   closeEdit();
-  if (qty === x.qty && notes === x.notes && !costChanged) return;
+  if (qty === x.qty && notes === x.notes && !costChanged && !storeChanged) return;
   const body = {action:"edit", row:x.row, item:x.item, qty, notes};
   if (costChanged) body.cost = newCost;
+  if (storeChanged) body.store = storeIn;
   send(body, {now: true});
 };
 
@@ -806,6 +812,13 @@ $("#confirmYes").onclick = () => {
   toast(`${x.item} is off your list. If you need it back, it's at the bottom of your packing list under "You don't need these."`, false, 5000);
 };
 
+// Same store choices as the sheet's Store dropdown.
+function storeOptions(current){
+  const all = state.data ? state.data.items : [];
+  const stores = uniq([...STORE_ORDER, ...all.map(x => x.store).filter(s => s && s !== "N/A"), current && current !== "N/A" ? current : ""]);
+  return `<option value="">Not sure yet</option>` + stores.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join("") + `<option value="N/A">No store needed</option>`;
+}
+
 /* ===== Add an item ===== */
 const DEFAULT_SECTIONS = ["Equipment","Food","Supplies","Kids","Extra"];
 const DEFAULT_CATEGORIES = ["Meat","Dairy","Fruit & veg","Basics","Snacks","Condiments","Toys","Cookware"];
@@ -818,7 +831,7 @@ function openAdd(){
   const f = $("#addForm"); f.reset();
   $("#addSection").innerHTML = secs.map(s => `<option${s === "Supplies" ? " selected" : ""}>${esc(s)}</option>`).join("");
   $("#addCategory").innerHTML = `<option value="">None</option>` + cats.map(s => `<option>${esc(s)}</option>`).join("");
-  $("#addStore").innerHTML = `<option value="">Not sure yet</option>` + stores.map(s => `<option>${esc(s)}</option>`).join("") + `<option value="N/A">No store needed</option>`;
+  $("#addStore").innerHTML = storeOptions("");
   $("#addMineWrap").style.display = "";
   $("#addBg").classList.add("open"); pushSheet(); f.querySelector("input[name=item]").focus();
 }
