@@ -523,6 +523,10 @@ function applyOne_(family, b) {
         var q = asText_(b.qty);
         if (String(cell('Qty').getDisplayValue()).trim() !== q.replace(/^'/, '')) { cell('Qty').setValue(q); changes.push('amount to "' + q.replace(/^'/, '') + '"'); }
       }
+      if ('store' in b) {
+        var st = String(b.store == null ? '' : b.store).trim();
+        if (String(cell('Store').getDisplayValue()).trim() !== st) { cell('Store').setValue(st); changes.push(st ? 'store to ' + (st === 'N/A' ? 'no store needed' : st) : 'store (cleared)'); }
+      }
       if ('notes' in b) {
         var nt = String(b.notes || '').trim();
         if (String(cell('Notes').getDisplayValue()).trim() !== nt) { cell('Notes').setValue(nt); changes.push('note'); }
