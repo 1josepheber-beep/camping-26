@@ -250,8 +250,9 @@
 
 <div class="sheet-bg" id="editBg">
   <form class="sheet" id="editForm" role="dialog" aria-modal="true" aria-labelledby="editTitle">
-    <h3 id="editTitle"></h3>
+    <h3 id="editTitle">Edit item</h3>
     <p class="meta" id="editMeta"></p>
+    <label class="f">Item<input class="in" name="name" id="editName" maxlength="120" autocomplete="off"></label>
     <div class="two">
       <label class="f">Amount<input class="in" name="qty" id="editQty" placeholder="e.g. 12 packs"></label>
       <label class="f">Store<select class="in" name="store" id="editStore"></select></label>
@@ -373,6 +374,7 @@ window.addEventListener("popstate", e => {
 // Taps are collected and sent to the sheet together: one trip for many changes.
 // They go when someone taps Save, after a few seconds without a tap, or right away for forms (edit, add, reminders).
 const SAVE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M8 4v5h7V4M8 20v-6h8v6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>';
+const capFirst = s => { s = String(s || "").trim(); return s.charAt(0).toUpperCase() + s.slice(1); };
 const newCid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 function unsavedCount(){ return state.outbox.length + (state.inflight ? state.inflight.length : 0); }
 
@@ -425,6 +427,10 @@ function applyLocal(b){
     case "take": if (x) x.who = me; break;
     case "release": if (x) x.who = ""; break;
     case "edit": if (x){
+      if ("name" in b && b.name !== x.item){
+        Object.values(d.notNeeded || {}).forEach(list => { const i = list.indexOf(x.item); if (i > -1) list[i] = b.name; });
+        x.item = b.name;
+      }
       if ("qty" in b) x.qty = b.qty; if ("notes" in b) x.notes = b.notes; if ("store" in b) x.store = b.store;
       if ("cost" in b){ x.costNum = b.cost === "" ? 0 : +b.cost; x.cost = b.cost === "" ? "" : money(+b.cost); }
     } break;
@@ -555,7 +561,7 @@ function viewMine(){
     <button data-mineview="pack" aria-pressed="${view === "pack"}">Packing list<small>${pl.filter(x => x.packed[me]).length} of ${pl.length} packed</small></button>
   </div>`;
   if (view === "shop"){
-    h += `<h2 class="sec">Your shopping list</h2><p class="lead">What your family is buying for the group, by store. Tap Edit to change the amount, store, cost or note.</p>`;
+    h += `<h2 class="sec">Your shopping list</h2><p class="lead">What your family is buying for the group, by store. Tap Edit to change the name, amount, store, cost or note.</p>`;
     if (!buys.length){
       h += `<div class="empty">You haven't taken any group items yet. Tap "Take more items" below so nothing gets bought twice.</div>`;
     } else {
@@ -604,7 +610,7 @@ function viewShop(){
       ${stores.map(s => `<button class="chip" data-store="${esc(s)}" aria-pressed="${state.shopStore === s}">${esc(storeLabel(s))}<small>${count(s)}</small></button>`).join("")}
     </div>
     <label class="toggle"><input type="checkbox" id="onlyOpen" ${state.onlyOpen ? "checked" : ""}> Only items nobody has taken</label>
-    <p class="lead">Tap Edit to change the amount, store, cost or note.<button class="textbtn" data-additem="1">Add an item</button></p>`;
+    <p class="lead">Tap Edit to change the name, amount, store, cost or note.<button class="textbtn" data-additem="1">Add an item</button></p>`;
   let any = false;
   for (const s of (state.shopStore === "all" ? stores : [state.shopStore])){
     const xs = pool.filter(x => x.store === s); if (!xs.length) continue; any = true;
@@ -781,13 +787,13 @@ let editing = null;
 function openEdit(rowNum){
   const x = find(rowNum); if (!x) return;
   editing = x;
-  $("#editTitle").textContent = x.item;
+  $("#editName").value = x.item;
   $("#editMeta").textContent = [x.section, x.store ? storeLabel(x.store) : ""].filter(Boolean).join(", ");
   $("#editQty").value = x.qty; $("#editNotes").value = x.notes;
   $("#editStore").innerHTML = storeOptions(x.store); $("#editStore").value = x.store || "";
   $("#editCost").value = x.costNum > 0 ? x.costNum.toFixed(2) : "";
   $("#editCost").closest("label").style.display = isFamilyItem(x) ? "none" : "";
-  $("#editBg").classList.add("open"); pushSheet(); $("#editQty").focus();
+  $("#editBg").classList.add("open"); pushSheet();
 }
 function closeEdit(){ if (!$("#editBg").classList.contains("open")) return; $("#editBg").classList.remove("open"); editing = null; popSheet(); }
 $("#editCancel").onclick = closeEdit;
@@ -800,9 +806,15 @@ $("#editForm").onsubmit = e => {
   const newCost = costIn === "" ? "" : (isNaN(parseFloat(costIn)) ? oldCost : parseFloat(costIn).toFixed(2));
   const costChanged = !isFamilyItem(x) && newCost !== oldCost;
   const storeIn = $("#editStore").value, storeChanged = storeIn !== (x.store || "");
+  const name = capFirst($("#editName").value), nameChanged = name !== x.item;
+  if (!name){ toast("Write the item name.", true); $("#editName").focus(); return; }
+  if (nameChanged && state.data.items.some(i => i !== x && (i.section || "") === (x.section || "") && i.item.toLowerCase() === name.toLowerCase())){
+    toast(`There's already "${name}"${x.section ? " in " + x.section : ""}.`, true); $("#editName").focus(); return;
+  }
   closeEdit();
-  if (qty === x.qty && notes === x.notes && !costChanged && !storeChanged) return;
+  if (qty === x.qty && notes === x.notes && !costChanged && !storeChanged && !nameChanged) return;
   const body = {action:"edit", row:x.row, item:x.item, qty, notes};
+  if (nameChanged) body.name = name;
   if (costChanged) body.cost = newCost;
   if (storeChanged) body.store = storeIn;
   send(body, {now: true});
@@ -854,7 +866,7 @@ $("#addBrings").onchange = e => { $("#addMineWrap").style.display = e.target.val
 $("#addForm").onsubmit = e => {
   e.preventDefault();
   const d = new FormData(e.target);
-  const it = {action:"addItem", item:String(d.get("item")).trim(), section:d.get("section"), category:d.get("category"),
+  const it = {action:"addItem", item:capFirst(d.get("item")), section:d.get("section"), category:d.get("category"),
     brings:d.get("brings"), store:d.get("store"), qty:String(d.get("qty") || "").trim(), notes:String(d.get("notes") || "").trim(), mine: !!d.get("mine")};
   if (!it.item) return;
   closeAdd();
