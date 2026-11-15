@@ -212,6 +212,18 @@ function setNotNeeded_(family, item, on) {
   if (on) sh.appendRow([family, item, new Date()]);
 }
 
+// When an item is renamed, families who marked it "don't need" keep that.
+function renameNotNeeded_(oldName, newName) {
+  var sh = ss_().getSheetByName(NOT_NEEDED_TAB);
+  if (!sh || sh.getLastRow() < 2) return;
+  var rows = sh.getRange(2, 2, sh.getLastRow() - 1, 1).getDisplayValues();
+  for (var i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]).trim() === oldName) sh.getRange(i + 2, 2).setValue(newName);
+  }
+}
+
+function capFirst_(s) { s = String(s || '').trim(); return s.charAt(0).toUpperCase() + s.slice(1); }
+
 /* ---------- reminders + log ---------- */
 
 var REMINDER_HEADERS = ['Id', 'Date', 'Time', 'Reminder', 'For', 'Added by', 'Email to', 'Email status'];
@@ -476,7 +488,7 @@ function applyOne_(family, b) {
     put('Category', String(b.category || '').trim());
     put('Brings', String(b.brings || 'Group').trim());
     put('Store', String(b.store || '').trim());
-    put('Item', item);
+    put('Item', asText_(capFirst_(item)));
     put('Qty', asText_(b.qty));
     put('Notes', String(b.notes || '').trim());
     if (b.mine && String(b.brings || 'Group').trim() !== 'Each family') put('Who', family);
@@ -519,6 +531,27 @@ function applyOne_(family, b) {
       break;
     case 'edit':
       var changes = [];
+      if ('name' in b) {
+        var newName = capFirst_(b.name);
+        if (!newName) throw new Error('Write the item name.');
+        if (newName !== item) {
+          var secCol = ('Section' in L.col) ? L.col['Section'] : -1, itemIdx = need_(L, 'Item');
+          var nRows = sh.getLastRow() - L.headerRow;
+          var all = nRows > 0 ? sh.getRange(L.headerRow + 1, 1, nRows, L.lastCol).getDisplayValues() : [];
+          var mySec = secCol > -1 ? String(sh.getRange(r, secCol + 1).getDisplayValue()).trim() : '';
+          for (var k2 = 0; k2 < all.length; k2++) {
+            if (L.headerRow + 1 + k2 === r) continue;
+            var sameSec = secCol < 0 || String(all[k2][secCol]).trim() === mySec;
+            if (sameSec && String(all[k2][itemIdx]).trim().toLowerCase() === newName.toLowerCase()) {
+              throw new Error('There is already "' + newName + '"' + (mySec ? ' in ' + mySec : '') + '.');
+            }
+          }
+          cell('Item').setValue(asText_(newName));
+          renameNotNeeded_(item, newName);
+          log_(family, 'Renamed', item + ' → ' + newName);
+          item = newName;
+        }
+      }
       if ('qty' in b) {
         var q = asText_(b.qty);
         if (String(cell('Qty').getDisplayValue()).trim() !== q.replace(/^'/, '')) { cell('Qty').setValue(q); changes.push('amount to "' + q.replace(/^'/, '') + '"'); }
