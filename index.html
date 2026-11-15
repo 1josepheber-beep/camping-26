@@ -145,7 +145,7 @@
   nav.tabs button[aria-current="page"]::before{content:"";position:absolute;top:0;left:22%;right:22%;height:4px;border-radius:0 0 3px 3px;background:var(--blaze)}
   nav.tabs[hidden]{display:none}
 
-  .toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translate(-50%,12px);background:var(--pine);color:#fff;padding:10px 16px;border-radius:8px;font-size:15px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:30;max-width:90vw;text-align:center}
+  .toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translate(-50%,12px);background:var(--pine);color:#fff;padding:10px 16px;border-radius:8px;font-size:15px;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:30;width:max-content;max-width:min(92vw, 440px);text-align:center;line-height:1.35}
   .toast.show{opacity:1;transform:translate(-50%,0)}
   .toast.err{background:#8E2A22}
 
@@ -175,6 +175,19 @@
   .sheet .cancel{background:#fff;border:1.5px solid #B9C6B8;color:var(--pine)}
   .sheet .save{background:var(--pine);border:0;color:#fff}
 
+  /* Save button: floats bottom-right, just above the tabs */
+  .savefab{position:fixed;z-index:7;right:max(14px, calc(50vw - 246px));bottom:calc(66px + env(safe-area-inset-bottom));display:inline-flex;align-items:center;gap:9px;min-height:50px;padding:0 20px 0 16px;border:0;border-radius:999px;background:var(--blaze);color:var(--pine);font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:20px;box-shadow:0 6px 18px rgba(18,32,25,.3),0 0 0 2px var(--pine)}
+  .savefab[hidden]{display:none}
+  .savefab svg{width:20px;height:20px;flex:none}
+  .savefab[data-mode="saving"]{background:var(--pine);color:#fff;box-shadow:0 6px 18px rgba(18,32,25,.3),0 0 0 2px #fff}
+  .savefab[data-mode="saved"]{background:#2F6B45;color:#fff;box-shadow:0 6px 18px rgba(18,32,25,.25)}
+  .savefab[data-mode="error"]{background:#8E2A22;color:#fff;box-shadow:0 6px 18px rgba(18,32,25,.3)}
+  .savefab .spin{width:19px;height:19px;flex:none;border-radius:50%;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  body.has-fab .app{padding-bottom:calc(142px + env(safe-area-inset-bottom))}
+  body.has-fab .toast{bottom:calc(130px + env(safe-area-inset-bottom))}
+  .sheet .lead{margin:-4px 0 0;color:var(--pine-2);font-size:16px}
+
   @media (prefers-reduced-motion: reduce){*{transition:none !important}}
 </style>
 </head>
@@ -191,6 +204,15 @@
   <button data-tab="rem">Reminders</button>
 </nav>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<button class="savefab" id="saveFab" type="button" aria-live="polite" hidden></button>
+
+<div class="sheet-bg" id="confirmBg">
+  <div class="sheet" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmText">
+    <h3 id="confirmTitle"></h3>
+    <p class="lead" id="confirmText">Other families will still see it. If you need it again, you can add it back from the bottom of your packing list.</p>
+    <div class="btns"><button type="button" class="cancel" id="confirmNo">Cancel</button><button type="button" class="save" id="confirmYes">Yes, remove it</button></div>
+  </div>
+</div>
 
 <div class="screen" id="pickScreen" role="dialog" aria-modal="true" aria-labelledby="pickTitle">
   <div class="in2">
@@ -264,6 +286,8 @@ const STORE_ORDER = ["Costco","HEB","Kosher Butcher","Walmart","Trader Joe's","T
 const SKIP = /not (doing|buying) this year|not this year/i;
 
 const api = new URLSearchParams(location.search).get("api") || API_URL;
+// Changes save on their own after this many seconds without a tap (or right away with the Save button).
+const AUTO_SAVE_MS = (+(new URLSearchParams(location.search).get("autosave")) || 5) * 1000;
 const store = {
   get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } },
   set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} },
@@ -280,7 +304,8 @@ function loadLogin(){ const a = store.get(LOGIN_KEY); return (a && a.family && a
 function clearLogin(){ store.del(LOGIN_KEY); store.del(DATA_KEY); try { document.cookie = "camping_login=; max-age=0; path=/"; } catch(e){} }
 const state = {
   data: null, me: null, code: null, tab: "mine", shopStore: "all", onlyOpen: false, editMine: false,
-  queue: Promise.resolve(), pending: 0, lastSync: null, mineView: null, openSkip: false
+  outbox: [], inflight: null, saveState: "idle", changeSeq: 0, autoT: null, flushAgain: false, onOk: {},
+  lastSync: null, mineView: null, openSkip: false
 };
 
 const $ = s => document.querySelector(s);
@@ -294,9 +319,9 @@ function colorOf(name){
   const i = Math.max(0, fams.indexOf(name));
   return SPARE[i % SPARE.length];
 }
-function toast(msg, err){
+function toast(msg, err, ms){
   const t = $("#toast"); t.textContent = msg; t.classList.toggle("err", !!err); t.classList.add("show");
-  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), err ? 4200 : 1900);
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), ms || (err ? 4200 : 1900));
 }
 const pct = (a,b) => b ? Math.round(a / b * 100) : 0;
 
@@ -323,41 +348,149 @@ function goTab(tab, opts){
   }
   render(); window.scrollTo({top:0});
 }
-function anySheetOpen(){ return $("#editBg").classList.contains("open") || $("#addBg").classList.contains("open"); }
+function anySheetOpen(){ return ["#editBg","#addBg","#confirmBg"].some(s => $(s).classList.contains("open")); }
 function pushSheet(){ try { history.pushState({tab: state.tab, sheet: true}, "", "#" + state.tab); } catch(e){} }
 function popSheet(){ try { if (history.state && history.state.sheet) history.back(); } catch(e){} }
 window.addEventListener("popstate", e => {
-  if (anySheetOpen()){ $("#editBg").classList.remove("open"); $("#addBg").classList.remove("open"); editing = null; return; }
+  if (anySheetOpen()){ ["#editBg","#addBg","#confirmBg"].forEach(s => $(s).classList.remove("open")); editing = null; confirming = null; return; }
   const tab = (e.state && e.state.tab) || (location.hash.slice(1)) || "mine";
   if (state.me && TABS.includes(tab) && tab !== state.tab){ state.tab = tab; render(); window.scrollTo({top:0}); }
 });
 
-// Changes go out one at a time, in order. The screen updates right away; the sheet's answer replaces it when the line is clear.
-function send(body, optimistic, onOk){
-  if (optimistic) { optimistic(); render(); }
-  state.pending++;
-  state.queue = state.queue.then(async () => {
-    try {
-      const j = await post(Object.assign({family: state.me, code: state.code}, body));
-      if (state.pending === 1) setData(j);
-      if (onOk) onOk(j);
-    } catch (e) {
-      const m = String(e.message || e);
-      if (m.startsWith("CODE:")) { toast(m.slice(5).trim(), true); signOut(true); }
-      else { toast(navigator.onLine === false ? "You're offline. That change didn't save." : m, true); try { setData(await getData()); } catch(_){} }
-    } finally {
-      state.pending--; render();
+// Taps are collected and sent to the sheet together: one trip for many changes.
+// They go when someone taps Save, after a few seconds without a tap, or right away for forms (edit, add, reminders).
+const SAVE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11l3 3v13H5z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M8 4v5h7V4M8 20v-6h8v6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg>';
+const newCid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+function unsavedCount(){ return state.outbox.length + (state.inflight ? state.inflight.length : 0); }
+
+function send(body, opts){
+  opts = opts || {};
+  body = Object.assign({cid: newCid()}, body);
+  if (body.action === "addItem") body.tempRow = -(Date.now() + Math.floor(Math.random() * 1000));
+  if (opts.onOk) state.onOk[body.cid] = opts.onOk;
+  state.outbox.push(body); state.changeSeq++;
+  if (state.saveState !== "error") state.saveState = "waiting";
+  applyLocal(body);
+  render();
+  if (opts.now) flush(); else scheduleSave();
+}
+function scheduleSave(){ clearTimeout(state.autoT); state.autoT = setTimeout(() => flush(), AUTO_SAVE_MS); }
+
+async function flush(){
+  clearTimeout(state.autoT);
+  if (!state.me || !state.outbox.length) return;
+  if (state.inflight) { state.flushAgain = true; return; }
+  const batch = state.outbox.splice(0);
+  state.inflight = batch; state.saveState = "saving"; renderStatus();
+  try {
+    const j = await post({action:"batch", family: state.me, code: state.code, changes: batch});
+    state.inflight = null;
+    setData(j); state.outbox.forEach(applyLocal);
+    if (j.errors && j.errors.length) toast(j.errors[0], true);
+    batch.forEach(b => { const f = state.onOk[b.cid]; delete state.onOk[b.cid]; if (f) f(j); });
+    state.saveState = state.outbox.length ? "waiting" : "saved";
+    if (state.saveState === "saved") { clearTimeout(flush._t); flush._t = setTimeout(() => { if (state.saveState === "saved"){ state.saveState = "idle"; renderStatus(); } }, 2200); }
+  } catch (e) {
+    state.inflight = null;
+    const m = String(e.message || e);
+    if (m.startsWith("CODE:")) { state.outbox = []; state.saveState = "idle"; toast(m.slice(5).trim(), true); signOut(true); return; }
+    state.outbox = batch.concat(state.outbox); state.saveState = "error";
+    toast(navigator.onLine === false ? "You're offline. Your changes are kept. Tap Try again when you're back online." : "Couldn't reach the sheet. Your changes are kept. Tap Try again.", true, 5000);
+  }
+  safeRender();
+  if (state.flushAgain) { state.flushAgain = false; if (state.outbox.length) flush(); }
+}
+
+// Shows a change on screen right away. Also re-applied on top of fresh data from the sheet until it's saved.
+function applyLocal(b){
+  const d = state.data; if (!d) return;
+  const me = state.me;
+  const x = (b.row && d.items.find(i => i.row === b.row && i.item === b.item)) || (b.item ? d.items.find(i => i.item === b.item) : null);
+  switch (b.action){
+    case "done": if (x) x.done = !!b.value; break;
+    case "pack": if (x){ x.packed = x.packed || {}; if (b.value) x.packed[me] = true; else delete x.packed[me]; } break;
+    case "take": if (x) x.who = me; break;
+    case "release": if (x) x.who = ""; break;
+    case "edit": if (x){
+      if ("qty" in b) x.qty = b.qty; if ("notes" in b) x.notes = b.notes;
+      if ("cost" in b){ x.costNum = b.cost === "" ? 0 : +b.cost; x.cost = b.cost === "" ? "" : money(+b.cost); }
+    } break;
+    case "notNeeded": {
+      const nn = d.notNeeded = d.notNeeded || {};
+      const s = new Set(nn[me] || []); b.value ? s.add(b.item) : s.delete(b.item); nn[me] = [...s]; break;
     }
-  });
+    case "addItem":
+      if (!d.items.some(i => i.item === b.item && i.section === b.section))
+        d.items.push({row: b.tempRow, item: b.item, section: b.section, category: b.category, brings: b.brings, store: b.store,
+          qty: b.qty, notes: b.notes, cost: "", costNum: 0, who: b.mine && b.brings !== "Each family" ? me : "", done: false, packed: {}});
+      break;
+    case "deleteReminder": d.reminders = (d.reminders || []).filter(r => String(r.id) !== String(b.id)); break;
+  }
+}
+
+// Updates only the save button and the "Updated" line, without redrawing the list.
+function renderStatus(){
+  const s = document.querySelector("#sign .sync");
+  if (s && state.data){
+    const t = state.lastSync ? state.lastSync.toLocaleTimeString("en-US",{hour:"numeric", minute:"2-digit"}) : "";
+    s.firstChild.textContent = syncText(t);
+  }
+  renderSave();
+}
+function syncText(t){ return state.inflight ? "Saving…" : state.outbox.length ? "Not saved yet" : "Updated " + t; }
+function renderSave(){
+  const b = $("#saveFab"); if (!b) return;
+  const n = unsavedCount();
+  let mode = "";
+  if (state.me && state.data){
+    if (state.inflight) mode = "saving";
+    else if (state.outbox.length) mode = state.saveState === "error" ? "error" : "waiting";
+    else if (state.saveState === "saved") mode = "saved";
+  }
+  b.hidden = !mode; document.body.classList.toggle("has-fab", !!mode);
+  if (!mode) return;
+  b.dataset.mode = mode;
+  b.disabled = mode === "saving" || mode === "saved";
+  b.setAttribute("aria-busy", mode === "saving" ? "true" : "false");
+  b.innerHTML = mode === "saving" ? `<span class="spin" aria-hidden="true"></span>Saving… please don't close`
+    : mode === "saved" ? `${CHECK.replace('#fff','currentColor')}All saved`
+    : mode === "error" ? `Didn't save. Try again`
+    : `${SAVE_ICON}Save ${n} change${n === 1 ? "" : "s"}`;
+}
+// Don't redraw the list while someone is typing in it (the reminder form).
+function safeRender(){
+  const a = document.activeElement;
+  if (a && a.closest && a.closest("#view") && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) renderStatus(); else render();
 }
 
 async function refresh(manual){
-  if (!state.me || state.pending) return;
-  try { setData(await getData()); render(); if (manual) toast("Up to date"); }
+  if (!state.me) return;
+  if (state.inflight || state.outbox.length) { if (manual) flush(); return; }
+  const seq = state.changeSeq;
+  try {
+    const j = await getData();
+    // Something changed while this was loading: keep what's on screen, it's newer.
+    if (seq !== state.changeSeq || state.inflight || state.outbox.length) return;
+    setData(j); safeRender(); if (manual) toast("Up to date");
+  }
   catch (e) { if (manual) toast("Couldn't reach the sheet. Try again in a moment.", true); }
 }
 setInterval(() => { if (document.visibilityState === "visible") refresh(false); }, REFRESH_SECONDS * 1000);
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(false); });
+
+// If the app is closed or put away with unsaved changes, send them anyway as a backup.
+// The sheet ignores any change it already has, so nothing is applied twice.
+function beaconUnsaved(){
+  const changes = (state.inflight || []).concat(state.outbox);
+  if (!changes.length || !state.me || !navigator.sendBeacon) return;
+  try { navigator.sendBeacon(api, new Blob([JSON.stringify({action:"batch", quiet:true, family: state.me, code: state.code, changes})], {type:"text/plain;charset=utf-8"})); } catch(e){}
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") beaconUnsaved();
+  else { if (state.outbox.length && !state.inflight) flush(); else refresh(false); }
+});
+window.addEventListener("pagehide", beaconUnsaved);
+window.addEventListener("beforeunload", e => { if (unsavedCount()) { beaconUnsaved(); e.preventDefault(); e.returnValue = ""; } });
+window.addEventListener("online", () => { if (state.outbox.length) flush(); });
 
 /* ===== Helpers over the data ===== */
 const items = () => (state.data ? state.data.items : []).filter(x => !SKIP.test(x.qty + " " + x.notes));
@@ -387,7 +520,7 @@ function renderSign(){
     <div class="who"><span class="blaze" style="--c:${c}"></span><span>${esc(me)} family</span>
       <button class="switch" data-signout="1">Switch family</button></div>
     <h1>${esc(state.data.title || "Thanksgiving Camping")}</h1>
-    <p class="sync">${state.pending ? "Saving…" : "Updated " + t}<button data-refresh="1">Refresh</button></p>
+    <p class="sync">${syncText(t)}<button data-refresh="1">Refresh</button></p>
     <div class="meters" style="--c:${c}">
       <div class="meter"><span>Bought <b>${bought} of ${buys.length}</b></span><div class="bar"><i style="width:${pct(bought,buys.length)}%"></i></div></div>
       <div class="meter"><span>Packed <b>${packed} of ${fi.length}</b></span><div class="bar"><i style="width:${pct(packed,fi.length)}%"></i></div></div>
@@ -438,7 +571,7 @@ function viewMine(){
     if (off.length){
       h += `<details class="skip"${state.openSkip ? " open" : ""}><summary>You don't need these (${off.length})</summary><ul class="list">`;
       h += off.map(x => `<li class="row off"><span class="tick" aria-hidden="true"></span><div><span class="name">${esc(x.item)}</span></div>
-        <div class="side"><button class="take" data-unskip="${x.row}">Need it after all</button></div></li>`).join("");
+        <div class="side"><button class="take" data-unskip="${x.row}" aria-label="Add ${esc(x.item)} back">Add back</button></div></li>`).join("");
       h += `</ul></details>`;
     }
   }
@@ -595,9 +728,15 @@ function render(){
   if (!state.me || !state.data) return;
   renderSign();
   const scrollY = window.scrollY;
+  // Keep anything half-typed in the reminder form when the screen redraws.
+  const typed = {}; const oldForm = $("#newRem");
+  if (oldForm) oldForm.querySelectorAll("input, select, textarea").forEach(el => { if (el.name) typed[el.name] = el.value; });
   $("#view").innerHTML = ({mine:viewMine, shop:viewShop, fams:viewFams, cost:viewCost, rem:viewRem})[state.tab]();
+  const newForm = $("#newRem");
+  if (newForm && oldForm) newForm.querySelectorAll("input, select, textarea").forEach(el => { if (el.name in typed) el.value = typed[el.name]; });
   window.scrollTo(0, scrollY);
   document.querySelector("nav.tabs").hidden = false;
+  renderSave();
   document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-current", b.dataset.tab === state.tab ? "page" : "false"));
   const oo = $("#onlyOpen"); if (oo) oo.onchange = e => { state.onlyOpen = e.target.checked; render(); };
   const ds = document.querySelector("details.skip"); if (ds) ds.ontoggle = () => { state.openSkip = ds.open; };
@@ -610,7 +749,7 @@ function render(){
       if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){ toast("That email doesn't look right.", true); return; }
       if (email) store.set("camping-email", email);
       send({action:"addReminder", text:d.get("text"), date:d.get("date"), time:d.get("time"), for:d.get("for"), email},
-        null, () => toast(email ? "Reminder added. You'll get an email." : "Reminder added"));
+        {now: true, onOk: () => toast(email ? "Reminder added. You'll get an email." : "Reminder added")});
       f.reset();
       const ei = f.querySelector("input[name=email]"); if (ei) ei.value = email;
     };
@@ -643,8 +782,23 @@ $("#editForm").onsubmit = e => {
   if (qty === x.qty && notes === x.notes && !costChanged) return;
   const body = {action:"edit", row:x.row, item:x.item, qty, notes};
   if (costChanged) body.cost = newCost;
-  send(body, () => { x.qty = qty; x.notes = notes; if (costChanged){ x.costNum = newCost === "" ? 0 : +newCost; x.cost = newCost === "" ? "" : money(+newCost); } });
-  toast("Saved");
+  send(body, {now: true});
+};
+
+/* ===== "Don't need" asks first ===== */
+let confirming = null;
+function openConfirm(x){
+  confirming = x;
+  $("#confirmTitle").textContent = `Take ${x.item} off your list?`;
+  $("#confirmBg").classList.add("open"); pushSheet(); $("#confirmYes").focus();
+}
+function closeConfirm(){ if (!$("#confirmBg").classList.contains("open")) return; $("#confirmBg").classList.remove("open"); confirming = null; popSheet(); }
+$("#confirmNo").onclick = closeConfirm;
+$("#confirmBg").addEventListener("click", e => { if (e.target.id === "confirmBg") closeConfirm(); });
+$("#confirmYes").onclick = () => {
+  const x = confirming; closeConfirm(); if (!x) return;
+  send({action:"notNeeded", row:x.row, item:x.item, value:true});
+  toast(`${x.item} is off your list. If you need it back, it's at the bottom of your packing list under "You don't need these."`, false, 5000);
 };
 
 /* ===== Add an item ===== */
@@ -674,47 +828,46 @@ $("#addForm").onsubmit = e => {
     brings:d.get("brings"), store:d.get("store"), qty:String(d.get("qty") || "").trim(), notes:String(d.get("notes") || "").trim(), mine: !!d.get("mine")};
   if (!it.item) return;
   closeAdd();
-  send(it, () => {
-    state.data.items.push({row: -Date.now(), item: it.item, section: it.section, category: it.category, brings: it.brings,
-      store: it.store, qty: it.qty, notes: it.notes, cost: "", who: it.mine && it.brings !== "Each family" ? state.me : "", done: false, packed: {}});
-  });
+  send(it, {now: true});
   toast(`Added ${it.item}`);
 };
 
 /* ===== Taps ===== */
 document.addEventListener("click", e => {
   const t = e.target.closest("button, a"); if (!t || !state.me) return;
+  if (t.id === "saveFab"){ flush(); return; }
+  if (t.closest("#confirmBg")) return;
   if (t.matches("nav.tabs button")){ goTab(t.dataset.tab); return; }
   const rowNum = +(t.dataset.row || t.dataset.take || t.dataset.release || t.dataset.editRow || 0);
   if (t.closest("details.skip")) state.openSkip = true;
   const x = rowNum ? find(rowNum) : null;
   if (t.dataset.kind && x){
-    if (t.dataset.kind === "pack"){ const v = !x.packed[state.me]; send({action:"pack", row:x.row, item:x.item, value:v}, () => { if (v) x.packed[state.me] = true; else delete x.packed[state.me]; }); }
-    else { const v = !x.done; send({action:"done", row:x.row, item:x.item, value:v}, () => { x.done = v; }); }
+    if (t.dataset.kind === "pack"){ send({action:"pack", row:x.row, item:x.item, value: !(x.packed && x.packed[state.me])}); }
+    else { send({action:"done", row:x.row, item:x.item, value: !x.done}); }
     return;
   }
   if (t.dataset.editRow && x){ openEdit(x.row); return; }
-  if (t.dataset.take && x){ send({action:"take", row:x.row, item:x.item}, () => { x.who = state.me; }); toast("Added to your list"); return; }
-  if (t.dataset.release && x){ send({action:"release", row:x.row, item:x.item}, () => { x.who = ""; }); toast("Given back. Someone else can take it."); return; }
+  if (t.dataset.take && x){ send({action:"take", row:x.row, item:x.item}); toast("Added to your list"); return; }
+  if (t.dataset.release && x){ send({action:"release", row:x.row, item:x.item}); toast("Given back. Someone else can take it."); return; }
   if (t.dataset.store !== undefined && t.classList.contains("chip")){ state.shopStore = t.dataset.store; render(); return; }
   if (t.dataset.editmine){ state.editMine = !state.editMine; render(); return; }
   if (t.dataset.mineview){ state.mineView = t.dataset.mineview; store.set("camping-mineview", state.mineView); render(); return; }
-  if (t.dataset.skip || t.dataset.unskip){
-    const sx = find(+(t.dataset.skip || t.dataset.unskip)); if (!sx) return;
-    const on = !!t.dataset.skip, me = state.me;
-    send({action:"notNeeded", row:sx.row, item:sx.item, value:on}, () => {
-      const nn = state.data.notNeeded = state.data.notNeeded || {};
-      const list = new Set(nn[me] || []); on ? list.add(sx.item) : list.delete(sx.item); nn[me] = [...list];
-    });
-    if (!on) state.openSkip = true;
-    toast(on ? `Took ${sx.item} off your list` : `${sx.item} is back on your list`); return;
+  if (t.dataset.skip){ const sx = find(+t.dataset.skip); if (sx) openConfirm(sx); return; }
+  if (t.dataset.unskip){
+    const sx = find(+t.dataset.unskip); if (!sx) return;
+    state.openSkip = true;
+    send({action:"notNeeded", row:sx.row, item:sx.item, value:false});
+    toast(`${sx.item} is back on your list`); return;
   }
   if (t.dataset.additem){ openAdd(); return; }
   if (t.dataset.go === "open"){ state.shopStore = "all"; state.onlyOpen = true; goTab("shop"); return; }
   if (t.dataset.ics){ const r = state.data.reminders.find(r => String(r.id) === t.dataset.ics); if (r){ downloadIcs(r); toast("Calendar file downloaded"); } return; }
-  if (t.dataset.delrem){ const id = t.dataset.delrem; send({action:"deleteReminder", id}, () => { state.data.reminders = state.data.reminders.filter(r => String(r.id) !== id); }); toast("Reminder removed"); return; }
+  if (t.dataset.delrem){ send({action:"deleteReminder", id: t.dataset.delrem}, {now: true}); toast("Reminder removed"); return; }
   if (t.dataset.refresh){ refresh(true); return; }
-  if (t.dataset.signout){ signOut(false); return; }
+  if (t.dataset.signout){
+    if (unsavedCount()) { toast("Saving your changes first. Tap Switch family again in a moment.", false, 3500); flush(); return; }
+    signOut(false); return;
+  }
 });
 
 /* ===== Family + code ===== */
