@@ -23,8 +23,14 @@ var REMINDERS_TAB = 'App reminders';
 var LOG_TAB = 'App log';
 var NOT_NEEDED_TAB = 'App not needed';
 var FIXED_HEADERS = ['✓', 'Who', 'Section', 'Category', 'Brings', 'Store', 'Item', 'Qty', 'Cost', 'Notes'];
+var MAX_BATCH = 200;
+
+// Kept only while one request runs, so each save reads the sheet as little as possible.
+var LAYOUT_ = null, LOG_BUF_ = null;
+function resetRun_() { LAYOUT_ = null; LOG_BUF_ = null; }
 
 function doGet(e) {
+  resetRun_();
   try {
     return json_(Object.assign({ ok: true }, readAll_()));
   } catch (err) {
@@ -35,9 +41,12 @@ function doGet(e) {
 function doPost(e) {
   var lock = LockService.getScriptLock();
   lock.waitLock(15000);
+  resetRun_();
   try {
     var body = JSON.parse(e.postData.contents || '{}');
     var result = apply_(body) || {};
+    // A backup save sent while the app was closing doesn't need the list back.
+    if (body.quiet) return json_(Object.assign({ ok: true }, result));
     return json_(Object.assign({ ok: true }, result, readAll_()));
   } catch (err) {
     return json_({ ok: false, error: String(err && err.message || err) });
@@ -76,6 +85,8 @@ function layout_(sh) {
   return { headerRow: hr + 1, head: head, col: col, families: families, top: top.slice(0, hr), lastCol: lastCol };
 }
 
+function layoutNow_() { return LAYOUT_ || (LAYOUT_ = layout_(listSheet_())); }
+
 function need_(L, name) {
   if (!(name in L.col)) throw new Error('The column "' + name + '" is missing from the header row.');
   return L.col[name];
@@ -83,19 +94,19 @@ function need_(L, name) {
 
 function readAll_() {
   var sh = listSheet_();
-  var L = layout_(sh);
+  var L = layoutNow_();
   var first = L.headerRow + 1;
   var n = sh.getLastRow() - L.headerRow;
-  var vals = n > 0 ? sh.getRange(first, 1, n, L.lastCol).getValues() : [];
   var disp = n > 0 ? sh.getRange(first, 1, n, L.lastCol).getDisplayValues() : [];
+  var isOn = function (v) { return String(v).trim().toUpperCase() === 'TRUE'; };
   var c = L.col;
   var get = function (d, name) { return name in c ? String(d[c[name]] || '').trim() : ''; };
   var items = [];
-  for (var k = 0; k < vals.length; k++) {
+  for (var k = 0; k < disp.length; k++) {
     var item = get(disp[k], 'Item');
     if (!item) continue;
     var packed = {};
-    L.families.forEach(function (f) { if (vals[k][f.i] === true) packed[f.name] = true; });
+    L.families.forEach(function (f) { if (isOn(disp[k][f.i])) packed[f.name] = true; });
     items.push({
       row: first + k,
       item: item,
@@ -105,10 +116,10 @@ function readAll_() {
       store: get(disp[k], 'Store'),
       qty: get(disp[k], 'Qty'),
       cost: get(disp[k], 'Cost'),
-      costNum: ('Cost' in c) ? toNum_(vals[k][c['Cost']]) : 0,
+      costNum: ('Cost' in c) ? toNum_(disp[k][c['Cost']]) : 0,
       notes: get(disp[k], 'Notes'),
       who: get(disp[k], 'Who'),
-      done: ('✓' in c) ? vals[k][c['✓']] === true : false,
+      done: ('✓' in c) ? isOn(disp[k][c['✓']]) : false,
       packed: packed
     });
   }
@@ -153,7 +164,7 @@ function codesSheet_(families) {
 }
 
 function codeOk_(family, code) {
-  var L = layout_(listSheet_());
+  var L = layoutNow_();
   var fams = L.families.map(function (f) { return f.name; });
   if (fams.indexOf(family) < 0) return false;
   var sh = codesSheet_(fams);
@@ -301,13 +312,27 @@ function setupEmailReminders() {
   return 'Email reminders are on. Checking every 5 minutes.';
 }
 
-function log_(family, what, item) {
+function logSheet_() {
   var sh = ss_().getSheetByName(LOG_TAB);
   if (!sh) {
     sh = ss_().insertSheet(LOG_TAB, ss_().getSheets().length);
     sh.getRange(1, 1, 1, 4).setValues([['When', 'Family', 'What', 'Item']]);
   }
-  sh.appendRow([new Date(), family, what, item || '']);
+  return sh;
+}
+
+function log_(family, what, item) {
+  var row = [new Date(), family, what, item || ''];
+  if (LOG_BUF_) { LOG_BUF_.push(row); return; }
+  logSheet_().appendRow(row);
+}
+
+// During a batch, history lines are written together at the end in one go.
+function flushLog_() {
+  var rows = LOG_BUF_; LOG_BUF_ = null;
+  if (!rows || !rows.length) return;
+  var sh = logSheet_();
+  sh.getRange(sh.getLastRow() + 1, 1, rows.length, 4).setValues(rows);
 }
 
 function readLog_(max) {
@@ -358,7 +383,41 @@ function apply_(b) {
     return { loggedIn: family };
   }
   if (!codeOk_(family, b.code)) throw new Error('CODE: Your family code changed. Enter the new one.');
+  if (b.action === 'batch') return applyBatch_(family, b.changes);
+  return applyOne_(family, b);
+}
 
+/**
+ * Several changes from one family in one trip (the app's Save button).
+ * Each change has an id, so a change that arrives twice (a retry, or the
+ * backup save sent when the app closes) is only applied once.
+ */
+function applyBatch_(family, list) {
+  list = Array.isArray(list) ? list.slice(0, MAX_BATCH) : [];
+  var cache = null;
+  try { cache = CacheService.getScriptCache(); } catch (e) {}
+  var keys = [];
+  list.forEach(function (ch) { if (ch && ch.cid) keys.push('cid:' + ch.cid); });
+  var seen = {};
+  if (cache && keys.length) { try { seen = cache.getAll(keys) || {}; } catch (e) { seen = {}; } }
+  var applied = {}, errors = [];
+  LOG_BUF_ = [];
+  try {
+    list.forEach(function (ch) {
+      if (!ch || typeof ch !== 'object') return;
+      var key = ch.cid ? 'cid:' + ch.cid : '';
+      if (key && (seen[key] || applied[key])) return;
+      try { applyOne_(family, ch); } catch (err) { errors.push(String(err && err.message || err)); }
+      if (key) applied[key] = '1';
+    });
+  } finally {
+    flushLog_();
+  }
+  if (cache && Object.keys(applied).length) { try { cache.putAll(applied, 21600); } catch (e) {} }
+  return { errors: errors };
+}
+
+function applyOne_(family, b) {
   if (b.action === 'addReminder') {
     var text = String(b.text || '').trim();
     if (!text) throw new Error('Write what to remind.');
@@ -389,7 +448,7 @@ function apply_(b) {
   }
 
   var sh = listSheet_();
-  var L = layout_(sh);
+  var L = layoutNow_();
   var item = String(b.item || '').trim();
 
   if (b.action === 'addItem') {
