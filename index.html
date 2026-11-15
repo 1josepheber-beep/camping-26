@@ -108,8 +108,25 @@
   .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .fine{margin:12px 18px 0;font-size:13.5px;color:var(--stone)}
 
-  nav.tabs{position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:100%;max-width:520px;background:var(--pine);display:grid;grid-template-columns:repeat(4,1fr);padding-bottom:env(safe-area-inset-bottom);z-index:6}
-  nav.tabs button{background:transparent;border:0;color:#AFC0B3;padding:14px 4px 16px;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:17.5px;position:relative}
+  nav.tabs{position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:100%;max-width:520px;background:var(--pine);display:grid;grid-template-columns:repeat(5,1fr);padding-bottom:env(safe-area-inset-bottom);z-index:6}
+  nav.tabs button{background:transparent;border:0;color:#AFC0B3;padding:14px 2px 16px;font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:16.5px;position:relative;white-space:nowrap}
+
+  /* Costs */
+  .total{margin:16px 18px 0;padding:16px;background:var(--pine);color:#fff;border-radius:10px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .total span{display:block;font-size:14px;color:#C9D6CB}
+  .total b{display:block;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:30px;line-height:1.1}
+  .notice{margin:12px 18px 0;padding:12px 14px;border-radius:10px;background:#FDF3D6;border:1px solid #EBCF7E;font-size:14.5px;color:#4A3B12}
+  details.paid{border-bottom:1px solid var(--rule)}
+  details.paid summary{list-style:none;display:grid;grid-template-columns:12px 1fr auto;gap:14px;align-items:center;padding:14px 18px;cursor:pointer}
+  details.paid summary::-webkit-details-marker{display:none}
+  details.paid summary .blaze{height:36px;width:12px}
+  details.paid summary h4{margin:0;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:20px}
+  details.paid summary small{display:block;font-size:13.5px;color:var(--stone)}
+  details.paid summary .amt{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:22px}
+  details.paid ul{list-style:none;margin:0;padding:0 18px 12px 44px}
+  details.paid li{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px dashed var(--rule);font-size:15px}
+  details.paid li button{all:unset;cursor:pointer;flex:1}
+  details.paid li span{color:var(--pine-2);font-variant-numeric:tabular-nums}
   nav.tabs button[aria-current="page"]{color:#fff}
   nav.tabs button[aria-current="page"]::before{content:"";position:absolute;top:0;left:22%;right:22%;height:4px;border-radius:0 0 3px 3px;background:var(--blaze)}
   nav.tabs[hidden]{display:none}
@@ -156,6 +173,7 @@
   <button data-tab="mine">My list</button>
   <button data-tab="shop">Shopping</button>
   <button data-tab="fams">Families</button>
+  <button data-tab="cost">Costs</button>
   <button data-tab="rem">Reminders</button>
 </nav>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -191,6 +209,7 @@
     <h3 id="editTitle"></h3>
     <p class="meta" id="editMeta"></p>
     <label class="f">Amount<input class="in" name="qty" id="editQty" placeholder="e.g. 12 packs"></label>
+    <label class="f">What it cost ($)<input class="in" name="cost" id="editCost" inputmode="decimal" placeholder="e.g. 24.99"></label>
     <label class="f">Note<textarea class="in" name="notes" id="editNotes" placeholder="Anything people should know"></textarea></label>
     <div class="btns"><button type="button" class="cancel" id="editCancel">Cancel</button><button type="submit" class="save">Save</button></div>
   </form>
@@ -236,6 +255,15 @@ const store = {
   set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} },
   del(k){ try { localStorage.removeItem(k); } catch(e){} }
 };
+// The family login is kept in two places (storage and a cookie) so phones that clear one still remember it.
+const LOGIN_KEY = "camping-login", DATA_KEY = "camping-data";
+function readCookie(){ try { const m = document.cookie.match(/(?:^|;\s*)camping_login=([^;]+)/); return m ? JSON.parse(decodeURIComponent(m[1])) : null; } catch(e){ return null; } }
+function saveLogin(v){
+  store.set(LOGIN_KEY, v);
+  try { document.cookie = "camping_login=" + encodeURIComponent(JSON.stringify(v)) + "; max-age=31536000; path=/; SameSite=Lax" + (location.protocol === "https:" ? "; Secure" : ""); } catch(e){}
+}
+function loadLogin(){ const a = store.get(LOGIN_KEY); return (a && a.family && a.code) ? a : readCookie(); }
+function clearLogin(){ store.del(LOGIN_KEY); store.del(DATA_KEY); try { document.cookie = "camping_login=; max-age=0; path=/"; } catch(e){} }
 const state = {
   data: null, me: null, code: null, tab: "mine", shopStore: "all", onlyOpen: false, editMine: false,
   queue: Promise.resolve(), pending: 0, lastSync: null
@@ -268,7 +296,26 @@ async function post(body){
   const j = await r.json(); if (!j.ok) throw new Error(j.error || "Something went wrong.");
   return j;
 }
-function setData(j){ state.data = j; state.lastSync = new Date(); }
+function setData(j){ state.data = j; state.lastSync = new Date(); if (state.me) store.set(DATA_KEY, {data:j, at:Date.now()}); }
+
+/* ===== Back button: move between tabs inside the app ===== */
+const TABS = ["mine","shop","fams","cost","rem"];
+function goTab(tab, opts){
+  if (!TABS.includes(tab)) tab = "mine";
+  if (tab !== state.tab || (opts && opts.force)) {
+    state.tab = tab;
+    try { history.pushState({tab}, "", "#" + tab); } catch(e){}
+  }
+  render(); window.scrollTo({top:0});
+}
+function anySheetOpen(){ return $("#editBg").classList.contains("open") || $("#addBg").classList.contains("open"); }
+function pushSheet(){ try { history.pushState({tab: state.tab, sheet: true}, "", "#" + state.tab); } catch(e){} }
+function popSheet(){ try { if (history.state && history.state.sheet) history.back(); } catch(e){} }
+window.addEventListener("popstate", e => {
+  if (anySheetOpen()){ $("#editBg").classList.remove("open"); $("#addBg").classList.remove("open"); editing = null; return; }
+  const tab = (e.state && e.state.tab) || (location.hash.slice(1)) || "mine";
+  if (state.me && TABS.includes(tab) && tab !== state.tab){ state.tab = tab; render(); window.scrollTo({top:0}); }
+});
 
 // Changes go out one at a time, in order. The screen updates right away; the sheet's answer replaces it when the line is clear.
 function send(body, optimistic){
@@ -427,6 +474,29 @@ function viewFams(){
   return h;
 }
 
+const money = n => "$" + (Math.round(n * 100) / 100).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+function viewCost(){
+  const d = state.data, fams = d.families;
+  const paidItems = d.items.filter(x => !isFamilyItem(x) && x.costNum > 0);
+  const total = paidItems.reduce((s, x) => s + x.costNum, 0);
+  const share = fams.length ? total / fams.length : 0;
+  const missing = d.items.filter(x => !isFamilyItem(x) && x.done && !(x.costNum > 0)).length;
+  let h = `<div class="total"><div><span>Spent so far</span><b>${money(total)}</b></div><div><span>Rough share per family</span><b>${money(share)}</b></div></div>
+    <p class="notice">This is a rough guide, not an exact amount. It depends on how many extras there are and who takes extras. Use it to settle up at the end of the trip.</p>
+    <p class="lead" style="margin-top:12px">${missing ? `${missing} bought ${missing === 1 ? "item doesn't" : "items don't"} have a cost yet. ` : ""}To add what something cost, tap the item on My list or Shopping.</p>
+    <h2 class="sec">What each family paid</h2>`;
+  const block = (name, color, xs, label) => {
+    const paid = xs.reduce((s, x) => s + x.costNum, 0);
+    return `<details class="paid"><summary><span class="blaze" style="--c:${color}"></span><div><h4>${esc(label)}</h4>
+      <small>${xs.length ? `${xs.length} ${xs.length === 1 ? "item" : "items"}` : "Nothing yet"}</small></div><span class="amt">${money(paid)}</span></summary>
+      ${xs.length ? `<ul>${xs.map(x => `<li><button data-edit-row="${x.row}">${esc(x.item)}</button><span>${money(x.costNum)}</span></li>`).join("")}</ul>` : ""}</details>`;
+  };
+  for (const f of fams) h += block(f, colorOf(f), paidItems.filter(x => x.who === f), f === state.me ? `${f} (you)` : f);
+  const loose = paidItems.filter(x => !fams.includes(x.who));
+  if (loose.length) h += block("", "#9EAEA2", loose, "Not marked to a family");
+  return h;
+}
+
 function niceDate(d){
   const dt = new Date(String(d).slice(0,10) + "T12:00:00");
   if (isNaN(dt)) return {dow:"", day:esc(d), mon:""};
@@ -481,7 +551,7 @@ function render(){
   if (!state.me || !state.data) return;
   renderSign();
   const scrollY = window.scrollY;
-  $("#view").innerHTML = ({mine:viewMine, shop:viewShop, fams:viewFams, rem:viewRem})[state.tab]();
+  $("#view").innerHTML = ({mine:viewMine, shop:viewShop, fams:viewFams, cost:viewCost, rem:viewRem})[state.tab]();
   window.scrollTo(0, scrollY);
   document.querySelector("nav.tabs").hidden = false;
   document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-current", b.dataset.tab === state.tab ? "page" : "false"));
@@ -505,17 +575,25 @@ function openEdit(rowNum){
   $("#editTitle").textContent = x.item;
   $("#editMeta").textContent = [x.section, x.store ? storeLabel(x.store) : ""].filter(Boolean).join(", ");
   $("#editQty").value = x.qty; $("#editNotes").value = x.notes;
-  $("#editBg").classList.add("open"); $("#editQty").focus();
+  $("#editCost").value = x.costNum > 0 ? x.costNum.toFixed(2) : "";
+  $("#editCost").closest("label").style.display = isFamilyItem(x) ? "none" : "";
+  $("#editBg").classList.add("open"); pushSheet(); $("#editQty").focus();
 }
-function closeEdit(){ $("#editBg").classList.remove("open"); editing = null; }
+function closeEdit(){ if (!$("#editBg").classList.contains("open")) return; $("#editBg").classList.remove("open"); editing = null; popSheet(); }
 $("#editCancel").onclick = closeEdit;
 $("#editBg").addEventListener("click", e => { if (e.target.id === "editBg") closeEdit(); });
 $("#editForm").onsubmit = e => {
   e.preventDefault(); if (!editing) return;
   const x = editing, qty = $("#editQty").value.trim(), notes = $("#editNotes").value.trim();
+  const costIn = $("#editCost").value.replace(/[^0-9.]/g, "");
+  const oldCost = x.costNum > 0 ? x.costNum.toFixed(2) : "";
+  const newCost = costIn === "" ? "" : (isNaN(parseFloat(costIn)) ? oldCost : parseFloat(costIn).toFixed(2));
+  const costChanged = !isFamilyItem(x) && newCost !== oldCost;
   closeEdit();
-  if (qty === x.qty && notes === x.notes) return;
-  send({action:"edit", row:x.row, item:x.item, qty, notes}, () => { x.qty = qty; x.notes = notes; });
+  if (qty === x.qty && notes === x.notes && !costChanged) return;
+  const body = {action:"edit", row:x.row, item:x.item, qty, notes};
+  if (costChanged) body.cost = newCost;
+  send(body, () => { x.qty = qty; x.notes = notes; if (costChanged){ x.costNum = newCost === "" ? 0 : +newCost; x.cost = newCost === "" ? "" : money(+newCost); } });
   toast("Saved");
 };
 
@@ -533,9 +611,9 @@ function openAdd(){
   $("#addCategory").innerHTML = `<option value="">None</option>` + cats.map(s => `<option>${esc(s)}</option>`).join("");
   $("#addStore").innerHTML = `<option value="">Not sure yet</option>` + stores.map(s => `<option>${esc(s)}</option>`).join("") + `<option value="N/A">No store needed</option>`;
   $("#addMineWrap").style.display = "";
-  $("#addBg").classList.add("open"); f.querySelector("input[name=item]").focus();
+  $("#addBg").classList.add("open"); pushSheet(); f.querySelector("input[name=item]").focus();
 }
-function closeAdd(){ $("#addBg").classList.remove("open"); }
+function closeAdd(){ if (!$("#addBg").classList.contains("open")) return; $("#addBg").classList.remove("open"); popSheet(); }
 $("#addCancel").onclick = closeAdd;
 $("#addBg").addEventListener("click", e => { if (e.target.id === "addBg") closeAdd(); });
 $("#addBrings").onchange = e => { $("#addMineWrap").style.display = e.target.value === "Each family" ? "none" : ""; };
@@ -556,7 +634,7 @@ $("#addForm").onsubmit = e => {
 /* ===== Taps ===== */
 document.addEventListener("click", e => {
   const t = e.target.closest("button, a"); if (!t || !state.me) return;
-  if (t.matches("nav.tabs button")){ state.tab = t.dataset.tab; render(); window.scrollTo({top:0}); return; }
+  if (t.matches("nav.tabs button")){ goTab(t.dataset.tab); return; }
   const rowNum = +(t.dataset.row || t.dataset.take || t.dataset.release || t.dataset.editRow || 0);
   const x = rowNum ? find(rowNum) : null;
   if (t.dataset.kind && x){
@@ -570,7 +648,7 @@ document.addEventListener("click", e => {
   if (t.dataset.store !== undefined && t.classList.contains("chip")){ state.shopStore = t.dataset.store; render(); return; }
   if (t.dataset.editmine){ state.editMine = !state.editMine; render(); return; }
   if (t.dataset.additem){ openAdd(); return; }
-  if (t.dataset.go === "open"){ state.tab = "shop"; state.shopStore = "all"; state.onlyOpen = true; render(); window.scrollTo({top:0}); return; }
+  if (t.dataset.go === "open"){ state.shopStore = "all"; state.onlyOpen = true; goTab("shop"); return; }
   if (t.dataset.ics){ const r = state.data.reminders.find(r => String(r.id) === t.dataset.ics); if (r){ downloadIcs(r); toast("Calendar file downloaded"); } return; }
   if (t.dataset.delrem){ const id = t.dataset.delrem; send({action:"deleteReminder", id}, () => { state.data.reminders = state.data.reminders.filter(r => String(r.id) !== id); }); toast("Reminder removed"); return; }
   if (t.dataset.refresh){ refresh(true); return; }
@@ -601,40 +679,56 @@ $("#codeForm").onsubmit = async e => {
   try {
     const j = await post({action:"login", family:picked, code});
     setData(j); state.me = picked; state.code = code;
-    store.set("camping-login", {family:picked, code});
-    $("#codeScreen").classList.remove("open"); state.tab = "mine"; render(); window.scrollTo({top:0});
+    saveLogin({family:picked, code}); store.set(DATA_KEY, {data:j, at:Date.now()});
+    $("#codeScreen").classList.remove("open"); state.tab = "mine";
+    try { history.replaceState({tab:"mine"}, "", "#mine"); } catch(_){}
+    render(); window.scrollTo({top:0});
   } catch (err) {
     $("#codeMsg").textContent = String(err.message || err).replace(/^CODE:\s*/, "");
   } finally { $("#codeGo").disabled = false; $("#codeGo").textContent = "Go in"; }
 };
 function signOut(keepFamily){
   const fam = state.me;
-  store.del("camping-login"); state.me = null; state.code = null;
+  clearLogin(); state.me = null; state.code = null;
   document.querySelector("nav.tabs").hidden = true; $("#sign").innerHTML = ""; $("#view").innerHTML = "";
   if (keepFamily && fam){ picked = fam; $("#chosen").innerHTML = `<span class="blaze" style="--c:${colorOf(fam)};height:30px;width:12px"></span>${esc(fam)}`; $("#codeInput").value = ""; $("#codeMsg").textContent = "Your family code changed. Enter the new one."; $("#codeScreen").classList.add("open"); }
   else showPicker();
 }
 
 /* ===== Start ===== */
+function askCodeAgain(fam){
+  picked = fam; $("#loadScreen").classList.remove("open");
+  document.querySelector("nav.tabs").hidden = true; $("#sign").innerHTML = ""; $("#view").innerHTML = "";
+  $("#chosen").innerHTML = `<span class="blaze" style="--c:${colorOf(fam)};height:30px;width:12px"></span>${esc(fam)}`;
+  $("#codeInput").value = ""; $("#codeMsg").textContent = "Your family code changed. Enter the new one."; $("#codeScreen").classList.add("open");
+}
 async function start(){
   if (!api){ $("#loadMsg").textContent = "This app isn't connected to the sheet yet."; return; }
-  const saved = store.get("camping-login");
-  try {
-    if (saved && saved.family && saved.code){
-      try {
-        const j = await post({action:"login", family:saved.family, code:saved.code});
-        setData(j); state.me = saved.family; state.code = saved.code;
-        $("#loadScreen").classList.remove("open"); render(); return;
-      } catch (e) {
-        if (!/code/i.test(String(e.message))) throw e;
-        store.del("camping-login"); setData(await getData());
-        picked = saved.family; $("#loadScreen").classList.remove("open");
-        $("#chosen").innerHTML = `<span class="blaze" style="--c:${colorOf(picked)};height:30px;width:12px"></span>${esc(picked)}`;
-        $("#codeMsg").textContent = "Your family code changed. Enter the new one."; $("#codeScreen").classList.add("open"); return;
-      }
+  const h = location.hash.slice(1); state.tab = TABS.includes(h) ? h : "mine";
+  try { history.replaceState({tab: state.tab}, "", "#" + state.tab); } catch(e){}
+  const saved = loadLogin();
+  if (saved && saved.family && saved.code){
+    state.me = saved.family; state.code = saved.code; saveLogin(saved);
+    const cached = store.get(DATA_KEY);
+    if (cached && cached.data && cached.data.items){
+      // Open straight to the list the phone saw last time, then catch up with the sheet.
+      state.data = cached.data; state.lastSync = new Date(cached.at || Date.now());
+      $("#loadScreen").classList.remove("open"); render();
     }
-    setData(await getData()); showPicker();
-  } catch (e) {
+    try {
+      const j = await post({action:"login", family:saved.family, code:saved.code});
+      setData(j); $("#loadScreen").classList.remove("open"); render();
+    } catch (e) {
+      const m = String(e.message || e);
+      if (/code/i.test(m)){ clearLogin(); state.me = null; state.code = null; try { setData(await getData()); } catch(_){} askCodeAgain(saved.family); return; }
+      if (state.data){ toast("Couldn't reach the sheet. Showing the last saved list.", true); return; }
+      $("#loadMsg").textContent = "Couldn't reach the sheet. Check your connection and try again.";
+      $("#loadAct").innerHTML = `<button class="fbtn" style="justify-content:center" onclick="location.reload()">Try again</button>`;
+    }
+    return;
+  }
+  try { setData(await getData()); showPicker(); }
+  catch (e) {
     $("#loadMsg").textContent = "Couldn't reach the sheet. Check your connection and try again.";
     $("#loadAct").innerHTML = `<button class="fbtn" style="justify-content:center" onclick="location.reload()">Try again</button>`;
   }

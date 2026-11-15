@@ -8,7 +8,7 @@
  * - Reads the list from the tab named in LIST_TAB, finding columns by their header names
  *   (✓, Who, Section, Category, Brings, Store, Item, Qty, Cost, Notes). Every other header
  *   in that row is treated as a family checkbox column.
- * - Lets the app tick items, take / give back items, and change Qty and Notes.
+ * - Lets the app tick items, take / give back items, add items, and change Qty, Notes and Cost.
  * - Keeps family codes on a hidden tab called "App codes" (Family | Code).
  *   Change a family's code there any time. Default code is the last name followed by #.
  * - Keeps shared reminders on a tab called "App reminders" and a history of changes on "App log".
@@ -101,6 +101,7 @@ function readAll_() {
       store: get(disp[k], 'Store'),
       qty: get(disp[k], 'Qty'),
       cost: get(disp[k], 'Cost'),
+      costNum: ('Cost' in c) ? toNum_(vals[k][c['Cost']]) : 0,
       notes: get(disp[k], 'Notes'),
       who: get(disp[k], 'Who'),
       done: ('✓' in c) ? vals[k][c['✓']] === true : false,
@@ -217,6 +218,12 @@ function findRow_(sh, L, row, item) {
   throw new Error('"' + item + '" is not on the list anymore. Pull down to refresh.');
 }
 
+function toNum_(v) {
+  if (typeof v === 'number') return v;
+  var n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.\-]/g, ''));
+  return isNaN(n) ? 0 : n;
+}
+
 function asText_(v) {
   var s = String(v == null ? '' : v).trim();
   // Keep things like 1/2 or 3-4 from turning into dates.
@@ -328,6 +335,16 @@ function apply_(b) {
       if ('notes' in b) {
         var nt = String(b.notes || '').trim();
         if (String(cell('Notes').getDisplayValue()).trim() !== nt) { cell('Notes').setValue(nt); changes.push('note'); }
+      }
+      if ('cost' in b) {
+        var raw = String(b.cost == null ? '' : b.cost).replace(/[^0-9.\-]/g, '');
+        var newCost = raw === '' ? '' : Math.round(parseFloat(raw) * 100) / 100;
+        if (newCost !== '' && isNaN(newCost)) throw new Error('The cost has to be a number, like 12.50');
+        var oldCost = cell('Cost').getValue();
+        if (newCost === '' ? oldCost !== '' : toNum_(oldCost) !== newCost || oldCost === '') {
+          cell('Cost').setValue(newCost);
+          changes.push(newCost === '' ? 'cost (cleared)' : 'cost to $' + newCost.toFixed(2));
+        }
       }
       if (changes.length) log_(family, 'Changed ' + changes.join(' and '), item);
       break;
