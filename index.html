@@ -182,6 +182,8 @@
   .sheet .btns button{border-radius:8px;padding:11px;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:19px}
   .sheet .cancel{background:#fff;border:1.5px solid #B9C6B8;color:var(--pine)}
   .sheet .save{background:var(--pine);border:0;color:#fff}
+  .sheet .giveback{justify-self:start;background:none;border:0;padding:4px 0;font:inherit;font-weight:600;color:#8E2A22;text-decoration:underline;text-underline-offset:3px}
+  .sheet .giveback[hidden]{display:none}
 
   /* Save button: floats bottom-right, just above the tabs */
   .savefab{position:fixed;z-index:7;right:max(14px, calc(50vw - 246px));bottom:calc(66px + env(safe-area-inset-bottom));display:inline-flex;align-items:center;gap:9px;min-height:50px;padding:0 20px 0 16px;border:0;border-radius:999px;background:var(--blaze);color:var(--pine);font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:20px;box-shadow:0 6px 18px rgba(18,32,25,.3),0 0 0 2px var(--pine)}
@@ -274,6 +276,7 @@
     </div>
     <label class="f">What it cost ($)<input class="in" name="cost" id="editCost" inputmode="decimal" placeholder="e.g. 24.99"></label>
     <label class="f">Note<textarea class="in" name="notes" id="editNotes" placeholder="Anything people should know"></textarea></label>
+    <button type="button" class="giveback" id="editGiveBack" hidden>Give this item back</button>
     <div class="btns"><button type="button" class="cancel" id="editCancel">Cancel</button><button type="submit" class="save">Save</button></div>
   </form>
 </div>
@@ -583,16 +586,15 @@ function viewMine(){
     <button data-mineview="pack" aria-pressed="${view === "pack"}">Packing list<small>${pl.filter(x => x.packed[me]).length} of ${pl.length} packed</small></button>
   </div>`;
   if (view === "shop"){
-    h += `<h2 class="sec">Your shopping list</h2><p class="lead">What your family is buying for the group, by store. Tap Edit to change the name, amount, store, cost or note.</p>`;
+    h += `<h2 class="sec">Your shopping list</h2><p class="lead">What your family is buying for the group, by store. Tap "Give back" if someone else should buy it.</p>`;
     if (!buys.length){
       h += `<div class="empty">You haven't taken any group items yet. Tap "Take more items" below so nothing gets bought twice.</div>`;
     } else {
-      h += `<p class="lead"><button class="textbtn" style="margin:0" data-editmine="1">${state.editMine ? "Done giving back" : "Give items back"}</button></p>`;
       for (const st of storesOf(buys)){
         const xs = buys.filter(x => x.store === st);
         h += `<h3 class="grp">${esc(storeLabel(st))}<small>${xs.length}</small></h3><ul class="list">`;
         h += xs.map(x => row(x, {checked:x.done, color:c, kind:"buy",
-          side: state.editMine ? `<button class="take" data-release="${x.row}">Give back</button>` : ""})).join("");
+          side: `<button class="nn" data-giveback="${x.row}" aria-label="Give back ${esc(x.item)}">Give back</button>`})).join("");
         h += `</ul>`;
       }
     }
@@ -813,12 +815,14 @@ function openEdit(rowNum){
   $("#editMeta").textContent = [x.section, x.store ? storeLabel(x.store) : ""].filter(Boolean).join(", ");
   $("#editQty").value = x.qty; $("#editNotes").value = x.notes;
   $("#editStore").innerHTML = storeOptions(x.store); $("#editStore").value = x.store || "";
+  $("#editGiveBack").hidden = !(x.who === state.me && !isFamilyItem(x));
   $("#editCost").value = x.costNum > 0 ? x.costNum.toFixed(2) : "";
   $("#editCost").closest("label").style.display = isFamilyItem(x) ? "none" : "";
   $("#editBg").classList.add("open"); pushSheet();
 }
 function closeEdit(){ if (!$("#editBg").classList.contains("open")) return; $("#editBg").classList.remove("open"); editing = null; popSheet(); }
 $("#editCancel").onclick = closeEdit;
+$("#editGiveBack").onclick = () => { const x = editing; $("#editBg").classList.remove("open"); editing = null; if (x) askGiveBack(x, true); };
 $("#editBg").addEventListener("click", e => { if (e.target.id === "editBg") closeEdit(); });
 $("#editForm").onsubmit = e => {
   e.preventDefault(); if (!editing) return;
@@ -842,21 +846,34 @@ $("#editForm").onsubmit = e => {
   send(body, {now: true});
 };
 
-/* ===== "Don't need" asks first ===== */
+/* ===== "Don't need" and "Give back" ask first ===== */
 let confirming = null;
+// reuse: swap in for a window that's already open (keeps one Back step).
+function ask(title, text, yesLabel, onYes, reuse){
+  confirming = onYes;
+  $("#confirmTitle").textContent = title; $("#confirmText").textContent = text; $("#confirmYes").textContent = yesLabel;
+  $("#confirmBg").classList.add("open"); if (!reuse) pushSheet(); $("#confirmYes").focus();
+}
 function openConfirm(x){
-  confirming = x;
-  $("#confirmTitle").textContent = `Take ${x.item} off your list?`;
-  $("#confirmBg").classList.add("open"); pushSheet(); $("#confirmYes").focus();
+  ask(`Take ${x.item} off your list?`, "Other families will still see it. If you need it again, you can add it back from the bottom of your packing list.", "Yes, remove it", () => {
+    send({action:"notNeeded", row:x.row, item:x.item, value:true});
+    toast(`${x.item} is off your list. If you need it back, it's at the bottom of your packing list under "You don't need these."`, false, 5000);
+  });
+}
+function askGiveBack(x, reuse){
+  ask(`Give ${x.item} back?`,
+    x.done ? "You marked it bought. Giving it back also unmarks it, and it goes back on the Shopping tab for another family to take."
+           : "It goes back on the Shopping tab so another family can take it.",
+    "Yes, give it back", () => {
+      if (x.done) send({action:"done", row:x.row, item:x.item, value:false});
+      send({action:"release", row:x.row, item:x.item});
+      toast(`${x.item} is back on the Shopping tab for someone else to take.`, false, 4000);
+    }, reuse);
 }
 function closeConfirm(){ if (!$("#confirmBg").classList.contains("open")) return; $("#confirmBg").classList.remove("open"); confirming = null; popSheet(); }
 $("#confirmNo").onclick = closeConfirm;
 $("#confirmBg").addEventListener("click", e => { if (e.target.id === "confirmBg") closeConfirm(); });
-$("#confirmYes").onclick = () => {
-  const x = confirming; closeConfirm(); if (!x) return;
-  send({action:"notNeeded", row:x.row, item:x.item, value:true});
-  toast(`${x.item} is off your list. If you need it back, it's at the bottom of your packing list under "You don't need these."`, false, 5000);
-};
+$("#confirmYes").onclick = () => { const go = confirming; closeConfirm(); if (go) go(); };
 
 // Same store choices as the sheet's Store dropdown.
 function storeOptions(current){
@@ -945,7 +962,7 @@ document.addEventListener("click", e => {
   if (t.dataset.take && x){ send({action:"take", row:x.row, item:x.item}); toast("Added to your list"); return; }
   if (t.dataset.release && x){ send({action:"release", row:x.row, item:x.item}); toast("Given back. Someone else can take it."); return; }
   if (t.dataset.store !== undefined && t.classList.contains("chip")){ state.shopStore = t.dataset.store; render(); return; }
-  if (t.dataset.editmine){ state.editMine = !state.editMine; render(); return; }
+  if (t.dataset.giveback){ const gx = find(+t.dataset.giveback); if (gx) askGiveBack(gx); return; }
   if (t.dataset.mineview){ state.mineView = t.dataset.mineview; store.set("camping-mineview", state.mineView); render(); return; }
   if (t.dataset.skip){ const sx = find(+t.dataset.skip); if (sx) openConfirm(sx); return; }
   if (t.dataset.unskip){
