@@ -22,6 +22,7 @@ var CODES_TAB = 'App codes';
 var REMINDERS_TAB = 'App reminders';
 var LOG_TAB = 'App log';
 var NOT_NEEDED_TAB = 'App not needed';
+var TAX_TAB = 'App receipt tax';
 var FIXED_HEADERS = ['✓', 'Who', 'Section', 'Category', 'Brings', 'Store', 'Item', 'Qty', 'Cost', 'Notes'];
 var MAX_BATCH = 200;
 
@@ -143,6 +144,7 @@ function readAll_() {
     trip: trip,
     reminders: readReminders_(),
     notNeeded: readNotNeeded_(),
+    tax: readTax_(),
     log: readLog_(200),
     updated: new Date().toISOString()
   };
@@ -186,6 +188,31 @@ function notNeededSheet_() {
     sh.getRange(1, 1, 1, 3).setValues([['Family', 'Item', 'When']]);
   }
   return sh;
+}
+
+/* ---------- receipt tax: one amount per receipt, so nobody splits tax into items ---------- */
+function taxSheet_() {
+  var sh = ss_().getSheetByName(TAX_TAB);
+  if (!sh) {
+    sh = ss_().insertSheet(TAX_TAB, ss_().getSheets().length);
+    sh.getRange(1, 1, 1, 5).setValues([['Id', 'Family', 'Amount', 'Store', 'When']]);
+  }
+  return sh;
+}
+
+function readTax_() {
+  var sh = ss_().getSheetByName(TAX_TAB);
+  if (!sh || sh.getLastRow() < 2) return [];
+  var n = sh.getLastRow() - 1;
+  var vals = sh.getRange(2, 1, n, 5).getValues();
+  var out = [];
+  vals.forEach(function (r) {
+    var amt = toNum_(r[2]);
+    if (!String(r[1]).trim() || !(amt > 0)) return;
+    out.push({ id: String(r[0]), family: String(r[1]).trim(), amount: Math.round(amt * 100) / 100, store: String(r[3] || '').trim(),
+      when: r[4] instanceof Date ? r[4].toISOString() : String(r[4] || '') });
+  });
+  return out;
 }
 
 function readNotNeeded_() {
@@ -441,6 +468,30 @@ function applyOne_(family, b) {
     var rs = remindersSheet_();
     rs.appendRow([String(new Date().getTime()), "'" + String(b.date || ''), "'" + String(b.time || ''), text, String(b.for || 'Everyone'), family, emails, emails ? 'Waiting' : '']);
     log_(family, 'Added reminder', text);
+    return {};
+  }
+  if (b.action === 'addTax') {
+    var amt = Math.round(toNum_(b.amount) * 100) / 100;
+    if (!(amt > 0)) throw new Error('Write the tax amount, like 3.25');
+    if (amt > 5000) throw new Error('That tax amount looks too big. Check it and try again.');
+    var store = String(b.store || '').trim().slice(0, 40);
+    taxSheet_().appendRow([String(b.cid || new Date().getTime()), family, amt, store, new Date()]);
+    log_(family, 'Added receipt tax', '$' + amt.toFixed(2) + (store ? ' (' + store + ')' : ''));
+    return {};
+  }
+  if (b.action === 'deleteTax') {
+    var ts = ss_().getSheetByName(TAX_TAB);
+    if (ts && ts.getLastRow() > 1) {
+      var rowsT = ts.getRange(2, 1, ts.getLastRow() - 1, 4).getValues();
+      for (var q = rowsT.length - 1; q >= 0; q--) {
+        if (String(rowsT[q][0]) === String(b.id)) {
+          if (String(rowsT[q][1]).trim() !== family) throw new Error('Only ' + rowsT[q][1] + ' can remove that tax.');
+          ts.deleteRow(q + 2);
+          log_(family, 'Removed receipt tax', '$' + toNum_(rowsT[q][2]).toFixed(2) + (rowsT[q][3] ? ' (' + rowsT[q][3] + ')' : ''));
+          break;
+        }
+      }
+    }
     return {};
   }
   if (b.action === 'deleteReminder') {
