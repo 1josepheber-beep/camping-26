@@ -138,6 +138,13 @@
   .total span{display:block;font-size:14px;color:#C9D6CB}
   .total b{display:block;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:30px;line-height:1.1}
   .notice{margin:12px 18px 0;padding:12px 14px;border-radius:10px;background:#FDF3D6;border:1px solid #EBCF7E;font-size:14.5px;color:#4A3B12}
+  .taxform{display:grid;grid-template-columns:1fr 1.25fr auto;gap:10px;align-items:end;margin:8px 18px 0}
+  .taxform .solid{margin:0;min-height:44px}
+  .taxlist{list-style:none;margin:10px 18px 0;padding:0}
+  .taxlist li{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;padding:9px 0;border-bottom:1px solid var(--rule)}
+  .taxlist li span small{display:block;color:var(--stone);font-size:13px}
+  .taxlist li b{font-variant-numeric:tabular-nums}
+  details.paid li em{font-style:normal;color:var(--pine-2)}
   details.paid{border-bottom:1px solid var(--rule)}
   details.paid summary{list-style:none;display:grid;grid-template-columns:12px 1fr auto;gap:14px;align-items:center;padding:14px 18px;cursor:pointer}
   details.paid summary::-webkit-details-marker{display:none}
@@ -461,6 +468,10 @@ function applyLocal(b){
         d.items.push({row: b.tempRow, item: b.item, section: b.section, category: b.category, brings: b.brings, store: b.store,
           qty: b.qty, notes: b.notes, cost: "", costNum: 0, who: b.mine && b.brings !== "Each family" ? me : "", done: false, packed: {}});
       break;
+    case "addTax": d.tax = d.tax || [];
+      if (!d.tax.some(t => t.id === b.cid)) d.tax.push({id: b.cid, family: me, amount: +b.amount, store: b.store || "", when: new Date().toISOString()});
+      break;
+    case "deleteTax": d.tax = (d.tax || []).filter(t => String(t.id) !== String(b.id)); break;
     case "deleteReminder": d.reminders = (d.reminders || []).filter(r => String(r.id) !== String(b.id)); break;
   }
 }
@@ -695,20 +706,33 @@ const money = n => "$" + (Math.round(n * 100) / 100).toFixed(2).replace(/\B(?=(\
 function viewCost(){
   const d = state.data, fams = d.families;
   const paidItems = d.items.filter(x => !isFamilyItem(x) && x.costNum > 0).sort(byName);
-  const total = paidItems.reduce((s, x) => s + x.costNum, 0);
+  const taxes = (d.tax || []).slice().sort((a, b) => String(b.when).localeCompare(String(a.when)));
+  const taxTotal = taxes.reduce((s, t) => s + t.amount, 0);
+  const total = paidItems.reduce((s, x) => s + x.costNum, 0) + taxTotal;
   const share = fams.length ? total / fams.length : 0;
+  const myTax = taxes.filter(t => t.family === state.me);
   const missing = d.items.filter(x => !isFamilyItem(x) && x.done && !(x.costNum > 0)).length;
   let h = `<div class="total"><div><span>Spent so far</span><b>${money(total)}</b></div><div><span>Rough share per family</span><b>${money(share)}</b></div></div>
     <p class="notice">This is a rough guide, not an exact amount. It depends on how many extras there are and who takes extras. Use it to settle up at the end of the trip.</p>
     <p class="lead" style="margin-top:12px">${missing ? `${missing} bought ${missing === 1 ? "item doesn't" : "items don't"} have a cost yet. ` : ""}To add what something cost, tap Edit next to the item on My list or Shopping.</p>
+    <h2 class="sec">Receipt tax</h2>
+    <p class="lead">Put the tax from the bottom of each receipt here, so you don't have to split it into each item. It counts toward what your family paid.</p>
+    <form class="taxform" id="newTax" autocomplete="off">
+      <label class="f">Tax ($)<input class="in" name="amount" inputmode="decimal" placeholder="e.g. 3.25" required></label>
+      <label class="f">Store<select class="in" name="store">${storeOptions("").replace('<option value="">Not sure yet</option>', '<option value="">Optional</option>').replace('<option value="N/A">No store needed</option>', "")}</select></label>
+      <button class="solid" type="submit">Add tax</button>
+    </form>
+    ${myTax.length ? `<ul class="taxlist">${myTax.map(t => `<li><span>${esc(t.store || "Receipt")}<small>${ago(t.when)}</small></span><b>${money(t.amount)}</b><button class="nn" data-deltax="${esc(t.id)}" aria-label="Remove ${money(t.amount)} tax">Remove</button></li>`).join("")}</ul>` : ""}
     <h2 class="sec">What each family paid</h2>`;
-  const block = (name, color, xs, label) => {
-    const paid = xs.reduce((s, x) => s + x.costNum, 0);
+  const block = (name, color, xs, label, tx) => {
+    tx = tx || [];
+    const paid = xs.reduce((s, x) => s + x.costNum, 0) + tx.reduce((s, t) => s + t.amount, 0);
+    const bits = [xs.length ? `${xs.length} ${xs.length === 1 ? "item" : "items"}` : "", tx.length ? `tax from ${tx.length} ${tx.length === 1 ? "receipt" : "receipts"}` : ""].filter(Boolean);
     return `<details class="paid"><summary><span class="blaze" style="--c:${color}"></span><div><h4>${esc(label)}</h4>
-      <small>${xs.length ? `${xs.length} ${xs.length === 1 ? "item" : "items"}` : "Nothing yet"}</small></div><span class="amt">${money(paid)}</span></summary>
-      ${xs.length ? `<ul>${xs.map(x => `<li><button data-edit-row="${x.row}">${esc(x.item)}</button><span>${money(x.costNum)}</span></li>`).join("")}</ul>` : ""}</details>`;
+      <small>${bits.length ? bits.join(", ") : "Nothing yet"}</small></div><span class="amt">${money(paid)}</span></summary>
+      ${xs.length || tx.length ? `<ul>${xs.map(x => `<li><button data-edit-row="${x.row}">${esc(x.item)}</button><span>${money(x.costNum)}</span></li>`).join("")}${tx.map(t => `<li><em>Receipt tax${t.store ? " (" + esc(t.store) + ")" : ""}</em><span>${money(t.amount)}</span></li>`).join("")}</ul>` : ""}</details>`;
   };
-  for (const f of fams) h += block(f, colorOf(f), paidItems.filter(x => x.who === f), f === state.me ? `${f} (you)` : f);
+  for (const f of fams) h += block(f, colorOf(f), paidItems.filter(x => x.who === f), f === state.me ? `${f} (you)` : f, taxes.filter(t => t.family === f));
   const loose = paidItems.filter(x => !fams.includes(x.who));
   if (loose.length) h += block("", "#9EAEA2", loose, "Not marked to a family");
   return h;
@@ -779,10 +803,10 @@ function render(){
   renderSign();
   const scrollY = window.scrollY;
   // Keep anything half-typed in the reminder form when the screen redraws.
-  const typed = {}; const oldForm = $("#newRem");
+  const typed = {}; const oldForm = $("#newRem") || $("#newTax");
   if (oldForm) oldForm.querySelectorAll("input, select, textarea").forEach(el => { if (el.name) typed[el.name] = el.value; });
   $("#view").innerHTML = ({mine:viewMine, shop:viewShop, fams:viewFams, cost:viewCost, rem:viewRem})[state.tab]();
-  const newForm = $("#newRem");
+  const newForm = oldForm && $("#" + oldForm.id);
   if (newForm && oldForm) newForm.querySelectorAll("input, select, textarea").forEach(el => { if (el.name in typed) el.value = typed[el.name]; });
   window.scrollTo(0, scrollY);
   document.querySelector("nav.tabs").hidden = false;
@@ -790,6 +814,15 @@ function render(){
   document.querySelectorAll("nav.tabs button").forEach(b => b.setAttribute("aria-current", b.dataset.tab === state.tab ? "page" : "false"));
   const oo = $("#onlyOpen"); if (oo) oo.onchange = e => { state.onlyOpen = e.target.checked; render(); };
   const ds = document.querySelector("details.skip"); if (ds) ds.ontoggle = () => { state.openSkip = ds.open; };
+  const tf = $("#newTax"); if (tf) tf.onsubmit = e => {
+    e.preventDefault();
+    const amt = parseFloat(String(new FormData(tf).get("amount") || "").replace(/[^0-9.]/g, ""));
+    if (!(amt > 0)) { toast("Write the tax amount, like 3.25", true); return; }
+    const store = String(new FormData(tf).get("store") || "");
+    tf.reset(); document.activeElement && document.activeElement.blur && document.activeElement.blur();
+    send({action:"addTax", amount: Math.round(amt * 100) / 100, store}, {now: true});
+    toast(`Added ${money(amt)} tax`);
+  };
   const f = $("#newRem"); if (f) {
     const dateIn = f.querySelector("input[type=date]");
     if (!dateIn.value) dateIn.value = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0,10);
@@ -962,6 +995,12 @@ document.addEventListener("click", e => {
   if (t.dataset.take && x){ send({action:"take", row:x.row, item:x.item}); toast("Added to your list"); return; }
   if (t.dataset.release && x){ send({action:"release", row:x.row, item:x.item}); toast("Given back. Someone else can take it."); return; }
   if (t.dataset.store !== undefined && t.classList.contains("chip")){ state.shopStore = t.dataset.store; render(); return; }
+  if (t.dataset.deltax){
+    const tx = (state.data.tax || []).find(x => String(x.id) === t.dataset.deltax); if (!tx) return;
+    ask(`Remove ${money(tx.amount)} tax${tx.store ? " (" + tx.store + ")" : ""}?`, "It comes off what your family paid.", "Yes, remove it",
+      () => { send({action:"deleteTax", id: tx.id}, {now: true}); toast("Tax removed"); });
+    return;
+  }
   if (t.dataset.giveback){ const gx = find(+t.dataset.giveback); if (gx) askGiveBack(gx); return; }
   if (t.dataset.mineview){ state.mineView = t.dataset.mineview; store.set("camping-mineview", state.mineView); render(); return; }
   if (t.dataset.skip){ const sx = find(+t.dataset.skip); if (sx) openConfirm(sx); return; }
