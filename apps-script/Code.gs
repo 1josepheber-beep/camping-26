@@ -561,6 +561,11 @@ function applyOne_(family, b) {
     case 'done':
       cell('✓').setValue(!!b.value);
       log_(family, b.value ? 'Marked bought' : 'Unmarked bought', item);
+      // Buying a group item nobody took makes you its buyer (so it counts toward your costs).
+      if (b.value && ('Who' in L.col) && !String(cell('Who').getDisplayValue()).trim()) {
+        var brings = ('Brings' in L.col) ? String(cell('Brings').getDisplayValue()).trim().toLowerCase() : '';
+        if (brings !== 'each family') { cell('Who').setValue(family); log_(family, 'Took', item); }
+      }
       break;
     case 'pack':
       var f = L.families.filter(function (x) { return x.name === family; })[0];
