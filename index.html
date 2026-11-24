@@ -447,7 +447,7 @@ function applyLocal(b){
   const me = state.me;
   const x = (b.row && d.items.find(i => i.row === b.row && i.item === b.item)) || (b.item ? d.items.find(i => i.item === b.item) : null);
   switch (b.action){
-    case "done": if (x) x.done = !!b.value; break;
+    case "done": if (x){ x.done = !!b.value; if (b.value && !x.who && !isFamilyItem(x)) x.who = me; } break;
     case "pack": if (x){ x.packed = x.packed || {}; if (b.value) x.packed[me] = true; else delete x.packed[me]; } break;
     case "take": if (x) x.who = me; break;
     case "release": if (x) x.who = ""; break;
@@ -635,7 +635,7 @@ function viewMine(){
 
 function viewShop(){
   const all = groupItems();
-  const pool = state.onlyOpen ? all.filter(x => !x.who) : all;
+  const pool = state.onlyOpen ? all.filter(x => !x.who && !x.done) : all;
   const stores = storesOf(all);
   if (state.shopStore !== "all" && !stores.includes(state.shopStore)) state.shopStore = "all";
   const count = s => pool.filter(x => (s === "all" || x.store === s) && !x.done).length;
@@ -672,7 +672,7 @@ function ago(iso){
 }
 function viewFams(){
   const d = state.data, t = d.trip || {};
-  const open = groupItems().filter(x => !x.who).length;
+  const open = groupItems().filter(x => !x.who && !x.done).length;
   const meals = ["Breakfast","Lunch","Dinner"].filter(k => t[k]);
   let h = `<div class="trip"><p>${t.Adults ? `<b>${esc(t.Adults)} adults</b> and ` : ""}${t.Kids ? `<b>${esc(t.Kids)} kids</b> across ` : ""}${d.families.length} families.</p>
     ${meals.length ? `<dl>${meals.map(k => `<dt>${k}</dt><dd>${esc(t[k])}</dd>`).join("")}</dl>` : ""}</div>`;
